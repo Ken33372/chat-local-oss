@@ -1,0 +1,186 @@
+"""运行配置：环境变量 / .env 优先，其次是首次运行向导写入的 data/config.json。
+
+本地/自建后端按能力分别配置：
+- LLM：任意 Anthropic 兼容接口（DeepSeek、其他兼容服务）
+- ASR / OCR：DeepSeek 工具接口或 OpenAI 兼容接口，未配置即关闭
+- 搜索：Tavily / AnySearch / SearXNG，未配置即关闭
+
+只填 DEEPSEEK_API_KEY 时，自动把 LLM、ASR、OCR 指向 DeepSeek；
+搜索不会自动开启，云端模式的联网搜索由 DeepSeek 服务端完成，本地模式需要单独配置。
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import setup_store
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env(path: Path) -> None:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_env(Path(os.getenv("CHAT_LOCAL_ENV", BASE_DIR / ".env")))
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(_env(name, str(default)))
+    except ValueError:
+        return default
+
+
+DATA_DIR = Path(_env("CHAT_LOCAL_DATA", str(BASE_DIR / "data")))
+WEB_DIST = Path(_env("CHAT_LOCAL_WEB", str(BASE_DIR / "web" / "dist")))
+
+HOST = _env("CHAT_LOCAL_HOST", "127.0.0.1")
+PORT = _int_env("CHAT_LOCAL_PORT", 17865)
+
+MAX_TOOL_ROUNDS = _int_env("CHAT_LOCAL_MAX_TOOL_ROUNDS", 5)
+MAX_TOOL_RESULT_CHARS = _int_env("CHAT_LOCAL_MAX_TOOL_RESULT_CHARS", 12000)
+MAX_IMAGE_BYTES = _int_env("CHAT_LOCAL_MAX_IMAGE_BYTES", 20 * 1024 * 1024)
+IMAGE_MODE = _env("CHAT_LOCAL_IMAGE_MODE", "vision").lower()
+DEFAULT_SYSTEM = "该助手由用户自行配置的模型提供。"
+
+_saved: dict = {}
+
+
+def _pick(name: str, file_value: object, default: str = "") -> str:
+    """环境变量优先；空字符串视为未设置。"""
+    env = os.getenv(name)
+    if env is not None and env.strip():
+        return env.strip()
+    if file_value is not None and str(file_value).strip():
+        return str(file_value).strip()
+    return default
+
+
+def _block(name: str) -> dict:
+    value = _saved.get(name)
+    return value if isinstance(value, dict) else {}
+
+
+def _default_base(provider: str, key: str) -> str:
+    if provider == "deepseek" or (key and provider == "none"):
+        return "https://api.deepseek.com"
+    if provider == "openai":
+        return "https://api.openai.com"
+    return ""
+
+
+def _compute() -> dict:
+    deepseek_key = _env("DEEPSEEK_API_KEY")
+    llm = _block("llm")
+    search = _block("search")
+    asr = _block("asr")
+    ocr = _block("ocr")
+
+    llm_base = _pick(
+        "LLM_BASE_URL",
+        llm.get("base_url"),
+        "https://api.deepseek.com/anthropic" if deepseek_key else "",
+    ).rstrip("/")
+    llm_key = _pick("LLM_API_KEY", llm.get("api_key"), deepseek_key)
+    llm_model = _pick(
+        "LLM_MODEL", llm.get("model"), "deepseek-flash" if deepseek_key else ""
+    )
+    try:
+        context_limit = int(_pick("LLM_CONTEXT_LIMIT", llm.get("context_limit"), "131072"))
+    except ValueError:
+        context_limit = 131072
+    try:
+        max_output = int(
+            _pick("LLM_MAX_OUTPUT_TOKENS", llm.get("max_output_tokens"), "8192")
+        )
+    except ValueError:
+        max_output = 8192
+
+    asr_provider = _pick(
+        "ASR_PROVIDER", asr.get("provider"), "deepseek" if deepseek_key else "none"
+    ).lower()
+    asr_base = _pick(
+        "ASR_BASE_URL", asr.get("base_url"), _default_base(asr_provider, deepseek_key)
+    ).rstrip("/")
+    asr_key = _pick(
+        "ASR_API_KEY", asr.get("api_key"), deepseek_key if asr_provider == "deepseek" else ""
+    )
+    asr_model = _pick("ASR_MODEL", asr.get("model"), "whisper-1")
+
+    ocr_provider = _pick(
+        "OCR_PROVIDER", ocr.get("provider"), "deepseek" if deepseek_key else "none"
+    ).lower()
+    ocr_base = _pick(
+        "OCR_BASE_URL", ocr.get("base_url"), _default_base(ocr_provider, deepseek_key)
+    ).rstrip("/")
+    ocr_key = _pick(
+        "OCR_API_KEY", ocr.get("api_key"), deepseek_key if ocr_provider == "deepseek" else ""
+    )
+    ocr_model = _pick("OCR_MODEL", ocr.get("model"), "gpt-4o-mini")
+
+    try:
+        search_results = int(_pick("SEARCH_RESULTS", search.get("results"), "6") or 6)
+    except ValueError:
+        search_results = 6
+
+    return {
+        "DEEPSEEK_API_KEY": deepseek_key,
+        "LLM_BASE_URL": llm_base,
+        "LLM_API_KEY": llm_key,
+        "LLM_MODEL": llm_model,
+        "LLM_CONTEXT_LIMIT": context_limit,
+        "LLM_MAX_OUTPUT_TOKENS": max_output,
+        "ASR_PROVIDER": asr_provider,
+        "ASR_BASE_URL": asr_base,
+        "ASR_API_KEY": asr_key,
+        "ASR_MODEL": asr_model,
+        "OCR_PROVIDER": ocr_provider,
+        "OCR_BASE_URL": ocr_base,
+        "OCR_API_KEY": ocr_key,
+        "OCR_MODEL": ocr_model,
+        "SEARCH_PROVIDER": _pick("SEARCH_PROVIDER", search.get("provider"), "none").lower(),
+        "SEARCH_BASE_URL": _pick("SEARCH_BASE_URL", search.get("base_url"), "").rstrip("/"),
+        "SEARCH_API_KEY": _pick("SEARCH_API_KEY", search.get("api_key"), ""),
+        "SEARCH_RESULTS": search_results,
+    }
+
+
+def reload() -> None:
+    """向导保存后热加载；端口、数据目录等启动参数不变。"""
+    global _saved
+    _saved = setup_store.load(DATA_DIR)
+    globals().update(_compute())
+
+
+_saved = setup_store.load(DATA_DIR)
+globals().update(_compute())
+
+
+def capabilities() -> dict:
+    search_ready = (
+        SEARCH_PROVIDER == "anysearch"
+        or (SEARCH_PROVIDER == "tavily" and bool(SEARCH_API_KEY))
+        or (SEARCH_PROVIDER == "searxng" and bool(SEARCH_BASE_URL))
+    )
+    return {
+        "llm": bool(LLM_BASE_URL and LLM_MODEL),
+        "search": search_ready,
+        "asr": ASR_PROVIDER in ("deepseek", "openai") and bool(ASR_BASE_URL),
+        "ocr": OCR_PROVIDER in ("deepseek", "openai") and bool(OCR_BASE_URL),
+    }

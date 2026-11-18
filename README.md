@@ -1,0 +1,120 @@
+# chat-local
+
+基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造的本地聊天应用：会话和附件存在本机 SQLite，模型与工具由你自己配置。
+
+两种用法：
+
+- **DeepSeek 云端**：页面里填一个 DeepSeek API Key，对话、联网搜索、语音识别、朗读都由 DeepSeek 提供。
+- **自建后端**：后端按 `base URL + API Key` 调用任意 Anthropic 兼容模型；搜索、ASR、OCR 可分别接 Tavily / AnySearch / SearXNG / DeepSeek / OpenAI 兼容接口，不配置就自动关闭。
+
+## 项目状态
+
+这是一个**社区快照（v0.1.0）**，不是持续维护的产品。
+
+- 界面、消息协议和 DeepSeek 云端路径继承自 [chat-demo](https://github.com/deepseek-ai/chat-demo)，核心功能保留；自建后端路径做过冒烟测试。
+- **未经过广泛测试**：DeepSeek 云端、ASR、OCR、TTS、不同模型服务和不同操作系统上的表现，主要交给社区验证。
+- Issue 和 PR 随缘处理；使用前请自行备份 `data/`，不要把它当作唯一数据副本。
+- 遇到问题请附上系统、模型 provider、复现步骤和相关日志，便于判断。
+
+## 快速开始
+
+需要 Python 3.10+ 与 Node.js 20+。
+
+```bash
+pip install -r requirements.txt
+```
+
+首次打开页面会出现配置向导：选 DeepSeek 云端，或填自建后端的 Base URL、API Key、模型名。保存后写入 `data/config.json`，立即生效，不需要重启。
+
+也可以跳过向导，复制 `.env.example` 为 `.env` 后手动填写；环境变量优先于向导保存的值。
+
+构建并启动：
+
+```bash
+cd web && npm install && npm run build && cd ..
+python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
+```
+
+Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0.0.1:17865/`。
+
+## 配置
+
+配置有两个来源，优先级从高到低：
+
+1. 环境变量 / 项目根目录的 `.env`（适合部署）
+2. 首次运行向导写入的 `data/config.json`（适合普通用户）
+
+不会读取其他项目的文件。
+
+| 变量 | 说明 |
+|---|---|
+| `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR、OCR 指向 DeepSeek |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的 Anthropic 兼容接口 |
+| `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
+| `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
+| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1` |
+| `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
+| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片 |
+| `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
+| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索；AnySearch 的 key 可留空（匿名限流）；Tavily 需要 key |
+| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr` |
+
+示例：只用 DeepSeek 自建后端
+
+```env
+DEEPSEEK_API_KEY=sk-xxx
+SEARCH_PROVIDER=tavily
+SEARCH_API_KEY=tvly-xxx
+```
+
+示例：完全自建
+
+```env
+LLM_BASE_URL=http://127.0.0.1:8000
+LLM_API_KEY=
+LLM_MODEL=qwen3
+SEARCH_PROVIDER=searxng
+SEARCH_BASE_URL=http://127.0.0.1:8080
+ASR_PROVIDER=openai
+ASR_BASE_URL=http://127.0.0.1:9000
+ASR_API_KEY=
+ASR_MODEL=whisper-1
+```
+
+没配置的能力会从界面上隐藏（例如没有 ASR 就不显示麦克风），不会出现点了必然报错的按钮。
+
+## 能力对照
+
+| 能力 | DeepSeek 云端 | 自建后端 |
+|---|---|---|
+| 对话/思考/停止/续写 | DeepSeek API | Anthropic 兼容接口 |
+| 联网搜索、读网页 | DeepSeek 服务端工具，工具本身不计费 | 你配置的搜索 provider |
+| 语音输入 | DeepSeek `/v1/tools/asr` | `deepseek` 或 OpenAI 兼容 ASR |
+| 朗读 | DeepSeek `/v1/tools/tts` | 暂不支持 |
+| 图片 | 直传 DeepSeek | 直接发视觉；失败可回退 OCR |
+| PDF/Word/PPT | DeepSeek Files API | DeepSeek OCR 或关闭 |
+
+## 数据
+
+- 会话与附件：`data/chat.db`、`data/files/`。
+- 历史导入：支持 DeepSeek 官方导出 ZIP（`export_format_version: 3`），可覆盖、合并跳过重复、冲突另存副本；导入时可选择不导入工具调用记录或图片。
+- 归档：会话菜单 → 归档；设置 → 数据管理 → 查看归档，可打开或恢复。
+- 清理：按 N 年前/月前或日期区间删除；也可移除所有会话里的工具调用记录和图片原件。
+
+## 限制
+
+- 本项目未经过广泛测试，详见上面的「项目状态」。
+- 自建后端的 LLM 目前只支持 Anthropic 兼容协议（DeepSeek 的 `/anthropic` 端点、其他兼容服务）。OpenAI 兼容的 LLM 尚未接入。
+- OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 请用 DeepSeek OCR 或先转图片。
+- 导入/导出目前只支持 DeepSeek 导出格式。
+
+## 安全
+
+- 服务默认只监听 `127.0.0.1`，写接口要求 `X-Chat-Local: 1` 请求头。
+- 自建后端的密钥只放在 `.env` 或 `data/config.json`，保存后不会回传明文；两个位置都已被 `.gitignore` 排除。
+- 配置向导的写接口只接受本机请求；如果服务监听在 `0.0.0.0`，向导不可写，只能用 `.env`。
+- 云端模式的 API Key 存在浏览器 localStorage，和原版 chat-demo 一致。
+
+## 许可
+
+MIT，见 [LICENSE](LICENSE)。界面与消息协议来自 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）。
