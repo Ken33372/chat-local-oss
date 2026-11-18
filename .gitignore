@@ -5,3 +5,5 @@ server/__pycache__/
 *.pyc
 
 .env
+
+release/
