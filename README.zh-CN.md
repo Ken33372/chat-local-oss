@@ -52,7 +52,7 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 
 | | DeepSeek 云端 | 自建后端 |
 |---|---|---|
-| 模型 | DeepSeek 官方 API | 任意 Anthropic 兼容模型 |
+| 模型 | DeepSeek 官方 API | 任意 Anthropic 兼容模型（完全自定义） |
 | 需要 | 一个 DeepSeek API Key | Base URL + API Key + 模型名 |
 | 联网搜索 | DeepSeek 服务端工具 | 你配置的搜索 provider |
 | 语音输入 | DeepSeek `/v1/tools/asr` | 你配置的 ASR provider |
@@ -110,6 +110,11 @@ ASR_MODEL=whisper-1
 ```
 
 ## 功能
+
+### 自建模型完全自定义
+
+- 模型名、Base URL、API Key、上下文上限和单次最大输出都由你填写，不绑定 DeepSeek 或某个固定模型。
+- 目前支持 Anthropic 兼容协议；OpenAI 兼容 LLM 尚未接入，详见「限制」。
 
 ### 会话与数据
 

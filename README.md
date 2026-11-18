@@ -54,7 +54,7 @@ Saved settings go to `data/config.json` and take effect immediately, with no res
 
 | | DeepSeek Cloud | Self-hosted backend |
 |---|---|---|
-| Model | Official DeepSeek API | Any Anthropic-compatible model |
+| Model | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
 | Requires | A DeepSeek API key | Base URL + API key + model name |
 | Web search | DeepSeek server-side tools | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | Your configured ASR provider |
@@ -112,6 +112,11 @@ ASR_MODEL=whisper-1
 ```
 
 ## Features
+
+### Fully configurable self-hosted model
+
+- Model name, base URL, API key, context limit, and max output are all yours to set; nothing is hard-coded to DeepSeek or a specific model.
+- The Anthropic-compatible protocol is supported today. OpenAI-compatible LLMs are not supported yet; see Limitations.
 
 ### Conversations and data
 
