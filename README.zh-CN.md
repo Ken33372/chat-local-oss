@@ -79,7 +79,7 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 | `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片 |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
 | `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流） |
-| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr` |
+| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`。默认 `vision`，直接把图片发给模型，**要求模型支持视觉/多模态**；`auto` 先发图，被拒时自动回退 OCR；`ocr` 只做 OCR、不发图。**模型不支持多模态时请设为 `auto` 或 `ocr`，否则发图会收到上游报错。** |
 
 没配置的能力会从界面上隐藏（例如没有 ASR 就不显示麦克风），不会出现点了必然报错的按钮。
 

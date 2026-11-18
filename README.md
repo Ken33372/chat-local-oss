@@ -81,7 +81,7 @@ Nothing is read from other projects.
 | `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
 | `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | Web search. `SEARCH_BASE_URL` is optional for Tavily (`https://api.tavily.com`) and AnySearch (`https://api.anysearch.com`), but required for SearXNG. Tavily requires a key; AnySearch keys may be empty (anonymous rate limits) |
-| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr` |
+| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`. Defaults to `vision`, which sends images to the model and **requires vision/multimodal support**; `auto` falls back to OCR when the model rejects the image; `ocr` never sends images and uses OCR only. **If your model is not multimodal, set this to `auto` or `ocr`; otherwise sending an image returns an upstream error.** |
 
 Unconfigured capabilities are hidden in the UI (for example, no ASR means no microphone button), so users do not hit buttons that are guaranteed to fail.
 
