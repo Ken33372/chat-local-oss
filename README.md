@@ -7,6 +7,10 @@
 - **DeepSeek 云端**：页面里填一个 DeepSeek API Key，对话、联网搜索、语音识别、朗读都由 DeepSeek 提供。
 - **自建后端**：后端按 `base URL + API Key` 调用任意 Anthropic 兼容模型；搜索、ASR、OCR 可分别接 Tavily / AnySearch / SearXNG / DeepSeek / OpenAI 兼容接口，不配置就自动关闭。
 
+## AI 辅助开发声明
+
+本项目的代码、文档和重构大量使用了 **Qoder 中的 DeepSeek** 辅助生成和修改，并由人工审查、运行和取舍。AI 生成的代码可能存在错误、遗漏或安全问题，请在使用前自行评估；本项目与 DeepSeek 官方无关。
+
 ## 项目状态
 
 这是一个**社区快照（v0.1.0）**，不是持续维护的产品。
