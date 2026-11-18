@@ -54,7 +54,7 @@ Saved settings go to `data/config.json` and take effect immediately, with no res
 
 | | DeepSeek Cloud | Self-hosted backend |
 |---|---|---|
-| Model | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
+| LLM | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
 | Requires | A DeepSeek API key | Base URL + API key + model name |
 | Web search | DeepSeek server-side tools | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | Your configured ASR provider |
@@ -113,10 +113,15 @@ ASR_MODEL=whisper-1
 
 ## Features
 
-### Fully configurable self-hosted model
+### Per-capability self-hosted configuration
 
-- Model name, base URL, API key, context limit, and max output are all yours to set; nothing is hard-coded to DeepSeek or a specific model.
-- The Anthropic-compatible protocol is supported today. OpenAI-compatible LLMs are not supported yet; see Limitations.
+LLM, search, ASR, and OCR are configured independently:
+
+- **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint).
+- **ASR:** DeepSeek `/v1/tools/asr` or an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
+- **OCR:** DeepSeek `/v1/tools/ocr` (documents and images) or an OpenAI-compatible vision endpoint (images only).
+- **Search:** Tavily, AnySearch, SearXNG, or off.
+- Unconfigured capabilities are hidden automatically. OpenAI-compatible LLMs are not supported yet.
 
 ### Conversations and data
 
