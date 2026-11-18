@@ -2,6 +2,10 @@
 
 基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造的本地聊天应用：会话和附件存在本机 SQLite，模型与工具由你自己配置。
 
+> **定位：深度还原 DeepSeek 网页端的核心聊天体验，同时把会话和附件留在本机；通过 Anthropic 兼容接口，让更多模型也能使用这套前端。**
+
+这里的「还原」指对话、思考、联网/深搜、引用、附件和语音等核心聊天链路，不包含 DeepSeek 账号体系、云端会话同步或官网的全部运营功能。数据留在本机不等于完全不出网：云端模式仍会把请求发送给你选择的 API，只有自建模型才能把推理留在本地。
+
 两种用法：
 
 - **DeepSeek 云端**：页面里填一个 DeepSeek API Key，对话、联网搜索、语音识别、朗读都由 DeepSeek 提供。
@@ -131,9 +135,11 @@ ASR_MODEL=whisper-1
 - OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 请用 DeepSeek OCR 或先转图片。
 - 导入/导出目前只支持 DeepSeek 导出格式。
 
-## 安全
+## 安全与隐私
 
 - 服务默认只监听 `127.0.0.1`，写接口要求 `X-Chat-Local: 1` 请求头。
+- 会话和附件保存在本机 `data/`，不依赖 DeepSeek 账号或云端会话同步；但云端模式仍会把对话内容发送给 DeepSeek API，自建模式才会把推理留在你配置的模型端。
+- 开启联网搜索、ASR、OCR 时，对应内容会发送给你选择的 provider；不需要的能力可以直接关闭。
 - 自建后端的密钥只放在 `.env` 或 `data/config.json`，保存后不会回传明文；两个位置都已被 `.gitignore` 排除。
 - 配置向导的写接口只接受本机请求；如果服务监听在 `0.0.0.0`，向导不可写，只能用 `.env`。
 - 云端模式的 API Key 存在浏览器 localStorage，和原版 chat-demo 一致。
