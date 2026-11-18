@@ -80,18 +80,26 @@ Nothing is read from other projects.
 | `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
-| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | Web search; AnySearch keys may be empty (anonymous rate limits); Tavily requires a key |
+| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | Web search. `SEARCH_BASE_URL` is optional for Tavily (`https://api.tavily.com`) and AnySearch (`https://api.anysearch.com`), but required for SearXNG. Tavily requires a key; AnySearch keys may be empty (anonymous rate limits) |
 | `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr` |
 
 Unconfigured capabilities are hidden in the UI (for example, no ASR means no microphone button), so users do not hit buttons that are guaranteed to fail.
 
-### Example: DeepSeek model + Tavily search
+### Example: self-hosted mode with DeepSeek's Anthropic endpoint + Tavily
+
+Use this only in **self-hosted backend** mode. The model comes from DeepSeek, but web search is executed by this project's local tool loop, so it needs its own search provider.
 
 ```env
-DEEPSEEK_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/anthropic
+LLM_API_KEY=sk-xxx
+LLM_MODEL=deepseek-flash
+
 SEARCH_PROVIDER=tavily
 SEARCH_API_KEY=tvly-xxx
+# SEARCH_BASE_URL is optional; it defaults to https://api.tavily.com
 ```
+
+In **DeepSeek Cloud** mode, web search is handled by DeepSeek server-side; do not configure `SEARCH_PROVIDER` for that mode.
 
 ### Example: fully self-hosted
 

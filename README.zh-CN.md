@@ -78,18 +78,26 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 | `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片 |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
-| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索；AnySearch 的 key 可留空（匿名限流）；Tavily 需要 key |
+| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流） |
 | `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr` |
 
 没配置的能力会从界面上隐藏（例如没有 ASR 就不显示麦克风），不会出现点了必然报错的按钮。
 
-### 示例：DeepSeek 模型 + Tavily 搜索
+### 示例：自建后端模式，用 DeepSeek 的 Anthropic 接口当模型 + Tavily 搜索
+
+这个示例只适用于**自建后端模式**。模型来自 DeepSeek，但联网搜索由本项目的本地工具循环执行，所以需要单独配置搜索 provider。
 
 ```env
-DEEPSEEK_API_KEY=sk-xxx
+LLM_BASE_URL=https://api.deepseek.com/anthropic
+LLM_API_KEY=sk-xxx
+LLM_MODEL=deepseek-flash
+
 SEARCH_PROVIDER=tavily
 SEARCH_API_KEY=tvly-xxx
+# SEARCH_BASE_URL 可省略，默认 https://api.tavily.com
 ```
+
+如果使用 **DeepSeek 云端模式**，联网搜索由 DeepSeek 服务端完成，不要再配置 `SEARCH_PROVIDER`。
 
 ### 示例：完全自建
 
