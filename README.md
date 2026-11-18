@@ -115,6 +115,8 @@ ASR_MODEL=whisper-1
 | 图片 | 直传 DeepSeek | 直接发视觉；失败可回退 OCR |
 | PDF/Word/PPT | DeepSeek Files API | DeepSeek OCR 或关闭 |
 
+朗读（TTS）只在 DeepSeek 云端模式提供，调用 `/v1/tools/tts`；自建后端不显示朗读入口。云端 TTS 尚未做真机验证，属于「未经过广泛测试」的范围。
+
 ## 数据
 
 - 会话与附件：`data/chat.db`、`data/files/`。
