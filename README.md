@@ -2,17 +2,17 @@
 
 # chat-local
 
-> **Positioning: faithfully recreate the core DeepSeek web chat experience while keeping conversations and attachments on your machine; bring that frontend to more models through an Anthropic-compatible API.**
+> **Positioning: faithfully recreate the core DeepSeek web chat experience while keeping conversations and attachments on your machine; bring that chat experience to more models through an Anthropic-compatible API.**
 
 Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Recreate" here covers the core chat loop: chat, thinking, web and deep search, citations, attachments, and voice. It does not include DeepSeek accounts, cloud conversation sync, or every operational feature of the website.
 
 **Who it is for:** people who want DeepSeek-web-style chat, local history, and the ability to plug in their own model backend.
 
-**Who it is not for:** people who need agents, plugins, RAG knowledge bases, multi-user support, or mobile apps; use a platform built for those. This project intentionally stays a pure chat frontend.
+**Who it is not for:** people who need agents, plugins, RAG knowledge bases, multi-user support, or mobile apps; use a platform built for those. This project intentionally stays a pure chat tool.
 
 ## Project status
 
-This is a **community snapshot (v0.1.0)**, not a continuously maintained product.
+This is a **community snapshot (v0.1.1)**, not a continuously maintained product.
 
 - The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted path has been smoke-tested.
 - **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
@@ -127,12 +127,14 @@ LLM, search, ASR, and OCR are configured independently:
 
 - **Local storage:** FastAPI + SQLite store chats and attachments in `data/chat.db` and `data/files/`.
 - **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import.
-- **Archive and restore:** archive from the session menu; open or restore archived chats under Settings → Data management → View archive.
+- **Chat search:** search message text from the sidebar; results are grouped by chat with matching snippets. Archived chats are excluded.
+- **Archive and restore:** archive from the session menu; open, restore, or permanently delete archived chats under Settings → Data management → View archive.
 - **Chat cleanup:** delete chats older than N years/months or inside a date range; remove tool-call records and image originals from all chats.
 
 ### Context and tools (self-hosted only)
 
 - **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
+- **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
 
 ### UI and configuration

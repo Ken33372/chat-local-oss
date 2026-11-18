@@ -277,6 +277,7 @@ export const SetupWizard = () => {
     <Modal
       title={t('setupTitle')}
       className={styles.dialog}
+      mainClassName={styles.body}
       onClose={dismiss}
       footer={
         <>

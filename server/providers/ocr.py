@@ -6,7 +6,7 @@ import mimetypes
 from pathlib import Path
 
 import config
-from providers.common import ProviderError, client, detail, join
+from providers.common import ProviderError, client, detail, endpoint
 
 DEFAULT_BASE = {"deepseek": "https://api.deepseek.com", "openai": "https://api.openai.com"}
 IMAGE_EXT = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"}
@@ -26,7 +26,7 @@ def _deepseek(filename: str, data: bytes) -> str:
     )
     with client(240) as http:
         response = http.post(
-            join(_base(), "/v1/tools/ocr"),
+            endpoint(_base(), "/v1/tools/ocr"),
             files={"file": (filename or "upload", data, "application/octet-stream")},
             data={"purpose": "text_recognition"},
             headers=headers,
@@ -69,7 +69,9 @@ def _openai(filename: str, data: bytes) -> str:
         ],
     }
     with client(180) as http:
-        response = http.post(join(_base(), "/v1/chat/completions"), json=payload, headers=headers)
+        response = http.post(
+            endpoint(_base(), "/v1/chat/completions"), json=payload, headers=headers
+        )
     if response.status_code != 200:
         raise ProviderError(f"OCR 返回 {response.status_code}：{detail(response)}")
     body = response.json()

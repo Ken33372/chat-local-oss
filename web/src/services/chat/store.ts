@@ -17,6 +17,7 @@ import {
   prepareDraftMessage,
 } from './drafts.js'
 import { createLatestReminder } from './latestReminder.js'
+import { generateTitle } from './title.js'
 import {
   applyEvent,
   canContinueReply,
@@ -1119,6 +1120,50 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
     signal.addEventListener('abort', onAbort, { once: true })
   })
 
+const assistantText = (reply: AssistantMessage): string =>
+  reply.blocks
+    .flatMap((block) => (block.type === 'text' && !block.isTemplate ? [block.text] : []))
+    .join('\n')
+    .trim()
+
+const fallbackTitle = (content: string): string =>
+  content.trim().split(/\s+/).join(' ').slice(0, 24)
+
+/** 首轮完成后异步生成标题；用户已手动改名或标题已被其他请求写回时放弃。 */
+const maybeGenerateTitle = async (
+  sessionId: string,
+  question: UserMessage,
+  reply: AssistantMessage
+) => {
+  if (useSettings.getState().mode !== 'local' || !useSettings.getState().autoTitle) {
+    return
+  }
+  const user = question.content.trim() || question.files.map((file) => file.name).join(' ')
+  const assistant = assistantText(reply)
+  if (!user || !assistant) {
+    return
+  }
+  const fallback = fallbackTitle(question.content)
+  const session = getSession(sessionId)
+  if (!session || (session.title && session.title !== fallback)) {
+    return
+  }
+  try {
+    const title = await generateTitle({ user, assistant })
+    if (!title) {
+      return
+    }
+    const latest = getSession(sessionId)
+    if (!latest || (latest.title && latest.title !== fallback)) {
+      return
+    }
+    updateSession(sessionId, (current) => ({ ...current, title }))
+    persist(sessionId)
+  } catch {
+    // 生成失败时保留首轮截断标题
+  }
+}
+
 /**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
  * 补传失败时回复记为 upload 错误，可重试。
@@ -1126,6 +1171,12 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
+  const autoTitleEligible =
+    request.history.length === 0 &&
+    !request.prefix &&
+    !getSession(sessionId)?.title &&
+    useSettings.getState().mode === 'local' &&
+    useSettings.getState().autoTitle
   if (!getSession(sessionId)?.title) {
     titleRequests.add(controller)
   }
@@ -1258,5 +1309,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    if (autoTitleEligible && reply.status === 'done') {
+      void maybeGenerateTitle(sessionId, request.question, reply)
+    }
   }
 }

@@ -1,10 +1,13 @@
 """语音识别：DeepSeek /v1/tools/asr 或 OpenAI 兼容 /v1/audio/transcriptions。"""
 from __future__ import annotations
 
+import re
+
 import config
-from providers.common import ProviderError, client, detail, join
+from providers.common import ProviderError, client, detail, endpoint
 
 DEFAULT_BASE = {"deepseek": "https://api.deepseek.com", "openai": "https://api.openai.com"}
+_ASR_PREFIX = re.compile(r"^\s*language\s+[^<>]*<asr_text>\s*", re.IGNORECASE)
 
 
 def _base() -> str:
@@ -23,10 +26,10 @@ def transcribe(filename: str, data: bytes) -> str:
     )
     files = {"file": (filename or "recording.wav", data, "audio/wav")}
     if config.ASR_PROVIDER == "deepseek":
-        url = join(_base(), "/v1/tools/asr")
+        url = endpoint(_base(), "/v1/tools/asr")
         payload = None
     else:
-        url = join(_base(), "/v1/audio/transcriptions")
+        url = endpoint(_base(), "/v1/audio/transcriptions")
         payload = {"model": config.ASR_MODEL}
     with client(300) as http:
         response = http.post(url, files=files, data=payload, headers=headers)
@@ -36,7 +39,7 @@ def transcribe(filename: str, data: bytes) -> str:
     text = body.get("text") if isinstance(body, dict) else None
     if not isinstance(text, str):
         raise ProviderError("ASR 响应缺少 text")
-    return text
+    return _ASR_PREFIX.sub("", text).strip()
 
 
 def health() -> dict:

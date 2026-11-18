@@ -116,6 +116,109 @@ def list_sessions() -> list[dict]:
     ]
 
 
+def _search_pattern(query: str) -> str:
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _message_text(message: dict) -> str:
+    role = message.get("role")
+    if role == "user":
+        content = message.get("content")
+        return content if isinstance(content, str) else ""
+    if role != "assistant":
+        return ""
+    parts: list[str] = []
+    for block in message.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text" and not block.get("isTemplate"):
+            text = block.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _timestamp(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _snippet(text: str, query: str, radius: int = 48) -> str:
+    compact = " ".join(text.split())
+    index = compact.casefold().find(query.casefold())
+    if index < 0:
+        return compact[:120]
+    start = max(0, index - radius)
+    end = min(len(compact), index + len(query) + radius)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(compact) else ""
+    return f"{prefix}{compact[start:end]}{suffix}"
+
+
+def search_sessions(query: str, limit: int = 30) -> list[dict]:
+    """按消息正文搜索非归档会话；返回按会话分组的结果与片段。"""
+    needle = " ".join(query.split())[:200]
+    if not needle:
+        return []
+    pattern = _search_pattern(needle)
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT id, title, updated_at, data FROM sessions "
+            "WHERE archived = 0 AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') "
+            "ORDER BY updated_at DESC LIMIT 200",
+            (pattern, pattern),
+        ).fetchall()
+    folded = needle.casefold()
+    results: list[dict] = []
+    for row in rows:
+        try:
+            session = json.loads(row["data"])
+        except (TypeError, ValueError):
+            continue
+        title = str(session.get("title") or row["title"] or "")
+        matches: list[dict] = []
+        for message in session.get("messages") or []:
+            if not isinstance(message, dict):
+                continue
+            text = _message_text(message)
+            if not text or folded not in text.casefold():
+                continue
+            matches.append(
+                {
+                    "messageId": str(message.get("id") or ""),
+                    "role": str(message.get("role") or ""),
+                    "snippet": _snippet(text, needle),
+                    "createdAt": _timestamp(message.get("createdAt")),
+                }
+            )
+        if not matches and folded in title.casefold():
+            matches.append(
+                {
+                    "messageId": "",
+                    "role": "title",
+                    "snippet": _snippet(title, needle),
+                    "createdAt": _timestamp(session.get("createdAt")),
+                }
+            )
+        if not matches:
+            continue
+        results.append(
+            {
+                "id": str(session.get("id") or row["id"]),
+                "title": title,
+                "updatedAt": _timestamp(row["updated_at"]),
+                "matchCount": len(matches),
+                "matches": matches[:3],
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
 def load_session(session_id: str) -> dict | None:
     with _conn() as conn:
         row = conn.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()

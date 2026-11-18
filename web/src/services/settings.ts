@@ -22,6 +22,8 @@ type Settings = {
   search: boolean
   /** 一次回答里最多的工具调用轮数（本地模式） */
   maxToolRounds: number
+  /** 首轮回复完成后用模型生成标题（本地模式） */
+  autoTitle: boolean
   siderCollapsed: boolean
 }
 
@@ -35,6 +37,7 @@ const KEYS = {
   thinking: 'chat-demo:thinking',
   search: 'chat-demo:search',
   maxToolRounds: 'chat-demo:max-tool-rounds',
+  autoTitle: 'chat-demo:auto-title',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
 
@@ -114,6 +117,7 @@ export const useSettings = create<Settings>(() => ({
   thinking: read(KEYS.thinking) === 'true',
   search: read(KEYS.search) === 'true',
   maxToolRounds: initialMaxToolRounds(),
+  autoTitle: read(KEYS.autoTitle) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
 
@@ -164,6 +168,11 @@ export const setMaxToolRounds = (maxToolRounds: number) => {
   const value = Math.min(20, Math.max(1, Math.trunc(maxToolRounds)))
   write(KEYS.maxToolRounds, String(value))
   useSettings.setState({ maxToolRounds: value })
+}
+
+export const setAutoTitle = (autoTitle: boolean) => {
+  write(KEYS.autoTitle, String(autoTitle))
+  useSettings.setState({ autoTitle })
 }
 
 export const setSiderCollapsed = (siderCollapsed: boolean) => {

@@ -24,6 +24,7 @@ import {
 } from '../../services/chat/db.js'
 import {
   refreshAfterMaintenance,
+  removeSession,
   selectSession,
   setSessionArchived,
   stopAllReplies,
@@ -36,6 +37,7 @@ import { regionCodes, getRegionName, provinces } from '../../services/location.j
 import {
   isChineseBrowser,
   setLocale,
+  setAutoTitle,
   setLocation,
   setMaxToolRounds,
   setMode,
@@ -137,6 +139,7 @@ const SettingsContent = () => {
                 />
               ) : null}
               {mode === 'local' ? <MaxToolRoundsSetting /> : null}
+              {mode === 'local' ? <AutoTitleSetting /> : null}
               <ThemeSetting />
               <LocaleSetting />
               {mode === 'cloud' ? <TtsVoiceSetting /> : null}
@@ -244,11 +247,14 @@ const DeleteAllConfirm = ({
   )
 }
 
-/** 归档列表：点标题打开会话，右侧按钮恢复到侧栏。 */
+/** 归档列表：点标题打开会话，右侧支持恢复或永久删除。 */
 const ArchiveDialog = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslate()
   const sessions = useChatStore((state) => state.sessions).filter((session) => session.archived)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletePending, setDeletePending] = useState(false)
+  const deleting = sessions.find((session) => session.id === deletingId) ?? null
 
   const restore = async (id: string) => {
     setBusyId(id)
@@ -261,41 +267,99 @@ const ArchiveDialog = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
+  const confirmDelete = async () => {
+    if (!deletingId) {
+      return
+    }
+    setDeletePending(true)
+    try {
+      if (await removeSession(deletingId)) {
+        setDeletingId(null)
+      } else {
+        showToast({ key: 'sessionDeleteFailed', type: 'error' })
+      }
+    } finally {
+      setDeletePending(false)
+    }
+  }
+
   return (
-    <Modal title={t('archivedChats')} className={styles.archiveDialog} onClose={onClose}>
-      {sessions.length === 0 ? (
-        <div className={styles.archiveEmpty}>{t('archiveEmpty')}</div>
-      ) : (
-        <div className={styles.archiveList}>
-          {sessions.map((session) => (
-            <div key={session.id} className={styles.archiveRow}>
-              <button
-                type="button"
-                className={styles.archiveOpen}
-                onClick={() => {
-                  selectSession(session.id)
-                  closeSettings()
-                  onClose()
-                }}
-              >
-                <span className={styles.archiveTitle}>{session.title || t('untitledChat')}</span>
-                <span className={styles.archiveDate}>
-                  {formatDate(session.updatedAt, '/') ?? ''}
-                </span>
-              </button>
+    <>
+      <Modal
+        title={t('archivedChats')}
+        className={styles.archiveDialog}
+        closable
+        onClose={onClose}
+      >
+        <div className={styles.archiveHint}>{t('archivedChatsDesc')}</div>
+        {sessions.length === 0 ? (
+          <div className={styles.archiveEmpty}>{t('archiveEmpty')}</div>
+        ) : (
+          <div className={styles.archiveList}>
+            {sessions.map((session) => (
+              <div key={session.id} className={styles.archiveRow}>
+                <button
+                  type="button"
+                  className={styles.archiveOpen}
+                  onClick={() => {
+                    selectSession(session.id)
+                    closeSettings()
+                    onClose()
+                  }}
+                >
+                  <span className={styles.archiveTitle}>{session.title || t('untitledChat')}</span>
+                  <span className={styles.archiveDate}>
+                    {formatDate(session.updatedAt, '/') ?? ''}
+                  </span>
+                </button>
+                <Button
+                  variant="outlined"
+                  size="m"
+                  disabled={busyId !== null || deletePending}
+                  onClick={() => void restore(session.id)}
+                >
+                  {t('restoreChat')}
+                </Button>
+                <Button
+                  variant="dangerOutlined"
+                  size="m"
+                  disabled={busyId !== null || deletePending}
+                  onClick={() => setDeletingId(session.id)}
+                >
+                  {t('delete')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+      {deleting ? (
+        <Modal
+          title={t('deleteSessionModalContentTitle')}
+          onClose={() => {
+            if (!deletePending) {
+              setDeletingId(null)
+            }
+          }}
+          footer={
+            <>
               <Button
                 variant="outlined"
-                size="m"
-                disabled={busyId !== null}
-                onClick={() => void restore(session.id)}
+                disabled={deletePending}
+                onClick={() => setDeletingId(null)}
               >
-                {t('restoreChat')}
+                {t('cancel')}
               </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </Modal>
+              <Button variant="danger" disabled={deletePending} onClick={() => void confirmDelete()}>
+                {t('delete')}
+              </Button>
+            </>
+          }
+        >
+          {t('deleteSessionWithFilesDescription')}
+        </Modal>
+      ) : null}
+    </>
   )
 }
 
@@ -691,6 +755,31 @@ const MaxToolRoundsSetting = () => {
           options={values.map((value) => ({ value: String(value), label: String(value) }))}
           onChange={(value) => setMaxToolRounds(Number(value))}
         />
+      }
+    />
+  )
+}
+
+/** 本地模式：首轮回复完成后是否额外请求一次模型生成标题。 */
+const AutoTitleSetting = () => {
+  const t = useTranslate()
+  const autoTitle = useSettings((state) => state.autoTitle)
+  return (
+    <SettingCell
+      label={t('settingsAutoTitle')}
+      description={t('settingsAutoTitleDescription')}
+      status={null}
+      action={
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoTitle}
+          aria-label={t('settingsAutoTitle')}
+          className={clsx(styles.switch, autoTitle && styles.switchOn)}
+          onClick={() => setAutoTitle(!autoTitle)}
+        >
+          <span className={styles.switchThumb} />
+        </button>
       }
     />
   )

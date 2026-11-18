@@ -49,6 +49,33 @@ export const loadSessionSummaries = async (): Promise<SessionSummary[]> => {
   return body.sessions.map(toSessionSummary)
 }
 
+export type SessionSearchMatch = {
+  messageId: string
+  role: 'user' | 'assistant' | 'title'
+  snippet: string
+  createdAt: number
+}
+
+export type SessionSearchResult = {
+  id: string
+  title: string
+  updatedAt: number
+  matchCount: number
+  matches: SessionSearchMatch[]
+}
+
+export const searchSessions = async (
+  query: string,
+  signal?: AbortSignal
+): Promise<SessionSearchResult[]> => {
+  const response = await fetch(`/api/chat/search?q=${encodeURIComponent(query)}`, { signal })
+  if (!response.ok) {
+    await fail(response, '搜索会话')
+  }
+  const body = (await response.json()) as { results?: SessionSearchResult[] }
+  return Array.isArray(body.results) ? body.results : []
+}
+
 export const loadSession = async (id: string): Promise<Session | undefined> => {
   const response = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}`)
   if (response.status === 404) {

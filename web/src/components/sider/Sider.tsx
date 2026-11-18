@@ -1,11 +1,25 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
+import {
+  IconCloseOutline16,
+  IconPanelLeftOutline16,
+  IconSearchOutline16,
+  IconSettingsOutline16,
+  NewChatIcon,
+} from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
-import { newChat, removeSession, setSessionArchived, useChatStore } from '../../services/chat/store.js'
+import { searchSessions, type SessionSearchResult } from '../../services/chat/db.js'
+import {
+  newChat,
+  removeSession,
+  selectSession,
+  setSessionArchived,
+  useChatStore,
+} from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
+import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
@@ -28,6 +42,68 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const groups = useMemo(() => groupSessions(visibleSessions, now, t), [visibleSessions, now, t])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
   const [deletePending, setDeletePending] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SessionSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchFailed, setSearchFailed] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchRef.current?.focus()
+    }
+  }, [searchOpen])
+
+  useEffect(() => {
+    const text = query.trim()
+    if (!text) {
+      setResults([])
+      setSearching(false)
+      setSearchFailed(false)
+      return
+    }
+    const controller = new AbortController()
+    setSearching(true)
+    setSearchFailed(false)
+    const timer = setTimeout(() => {
+      void searchSessions(text, controller.signal)
+        .then((next) => {
+          if (!controller.signal.aborted) {
+            setResults(next)
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setResults([])
+            setSearchFailed(true)
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setSearching(false)
+          }
+        })
+    }, 220)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [query])
+
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery('')
+    setResults([])
+    setSearching(false)
+    setSearchFailed(false)
+  }
+
+  const openResult = (id: string) => {
+    selectSession(id)
+    closeSearch()
+    closeMobileSider()
+  }
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -57,14 +133,63 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
     <div className={clsx(styles.sider, mobile && styles.mobile)}>
       <div className={styles.top}>
         <div className={styles.appName}>{t('appName')}</div>
-        <IconButton
-          size="m"
-          icon={<IconPanelLeftOutline16 />}
-          tooltip={t('collapseSiderbarButton')}
-          tooltipPlacement="bottom"
-          onClick={() => (mobile ? closeMobileSider() : setSiderCollapsed(true))}
-        />
+        <div className={styles.topActions}>
+          <IconButton
+            size="m"
+            icon={<IconSearchOutline16 />}
+            tooltip={t('sessionSearch')}
+            tooltipPlacement="bottom"
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+          />
+          <IconButton
+            size="m"
+            icon={<IconPanelLeftOutline16 />}
+            tooltip={t('collapseSiderbarButton')}
+            tooltipPlacement="bottom"
+            onClick={() => (mobile ? closeMobileSider() : setSiderCollapsed(true))}
+          />
+        </div>
       </div>
+      {searchOpen ? (
+        <label className={styles.searchRow}>
+          <span className={styles.searchIcon}>
+            <IconSearchOutline16 />
+          </span>
+          <input
+            ref={searchRef}
+            className={styles.searchInput}
+            value={query}
+            placeholder={t('sessionSearchPlaceholder')}
+            aria-label={t('sessionSearchPlaceholder')}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                closeSearch()
+              } else if (
+                event.key === 'Enter' &&
+                !event.nativeEvent.isComposing &&
+                results[0]
+              ) {
+                event.preventDefault()
+                openResult(results[0].id)
+              }
+            }}
+          />
+          {query ? (
+            <button
+              type="button"
+              className={styles.searchClear}
+              aria-label={t('sessionSearchClear')}
+              onClick={() => {
+                setQuery('')
+                searchRef.current?.focus()
+              }}
+            >
+              <IconCloseOutline16 />
+            </button>
+          ) : null}
+        </label>
+      ) : null}
       <button
         type="button"
         className={styles.newChat}
@@ -79,26 +204,76 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         {t('newChat')}
       </button>
       <div className={styles.listWrap}>
-        <div className={styles.list}>
-          {groups.map((group) => (
-            <div key={group.key} className={styles.section}>
-              <div className={styles.sectionHeader}>{group.label}</div>
-              {group.sessions.map((session) => (
-                <SessionItem
-                  key={session.id}
-                  session={session}
-                  active={session.id === activeId}
-                  onDelete={() => setDeleting(session)}
-                  onArchive={async () => {
-                    if (!(await setSessionArchived(session.id, true))) {
-                      showToast({ key: 'archiveFailed', type: 'error' })
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+        {query.trim() ? (
+          <div className={styles.searchResults}>
+            {searching ? (
+              <div className={styles.searchEmpty}>{t('sessionSearching')}</div>
+            ) : searchFailed ? (
+              <div className={styles.searchEmpty}>{t('sessionSearchFailed')}</div>
+            ) : results.length === 0 ? (
+              <div className={styles.searchEmpty}>{t('sessionSearchEmpty')}</div>
+            ) : (
+              results.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  className={styles.searchResult}
+                  onClick={() => openResult(result.id)}
+                >
+                  <span className={styles.searchResultTop}>
+                    <span className={styles.searchResultTitle}>
+                      {result.title || t('untitledChat')}
+                    </span>
+                    <span className={styles.searchResultDate}>
+                      {formatDate(result.updatedAt, '/') ?? ''}
+                    </span>
+                  </span>
+                  {result.matches.slice(0, 2).map((match, index) => (
+                    <span
+                      key={`${match.messageId || 'title'}-${index}`}
+                      className={styles.searchSnippet}
+                    >
+                      <span className={styles.searchSnippetRole}>
+                        {match.role === 'user'
+                          ? t('sessionSearchYou')
+                          : match.role === 'assistant'
+                            ? t('sessionSearchAssistant')
+                            : t('sessionSearchTitle')}
+                      </span>
+                      {match.snippet}
+                    </span>
+                  ))}
+                  {result.matchCount > 2 ? (
+                    <span className={styles.searchMore}>
+                      {t('sessionSearchMore', { count: result.matchCount - 2 })}
+                    </span>
+                  ) : null}
+                </button>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className={styles.list}>
+            {groups.map((group) => (
+              <div key={group.key} className={styles.section}>
+                <div className={styles.sectionHeader}>{group.label}</div>
+                {group.sessions.map((session) => (
+                  <SessionItem
+                    key={session.id}
+                    session={session}
+                    active={session.id === activeId}
+                    onDelete={() => setDeleting(session)}
+                    onArchive={async () => {
+                      if (!(await setSessionArchived(session.id, true))) {
+                        showToast({ key: 'archiveFailed', type: 'error' })
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className={styles.bottom}>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>

@@ -1,5 +1,23 @@
 .dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   padding-top: 20px;
+  overflow: hidden;
+}
+
+.body {
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 640px) {
+  .dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
 }
 
 .intro {

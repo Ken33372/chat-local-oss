@@ -19,6 +19,14 @@ def join(base: str, path: str) -> str:
     return base + path
 
 
+def endpoint(base: str, path: str) -> str:
+    """拼接接口地址；base 已经是完整接口时不再重复追加。"""
+    base = base.rstrip("/")
+    if base.endswith(path):
+        return base
+    return join(base, path)
+
+
 def detail(response: httpx.Response) -> str:
     try:
         body = response.json()

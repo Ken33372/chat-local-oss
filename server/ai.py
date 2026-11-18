@@ -380,6 +380,59 @@ def _title_for(messages: list[dict]) -> str:
     return ""
 
 
+_TITLE_SYSTEM = (
+    "你负责给对话起标题。根据用户第一条消息和助手第一条回复，"
+    "生成一个简短、具体、能区分对话内容的标题。"
+    "使用对话的主要语言；只输出标题本身，不要引号、句号、解释或前缀。"
+    "中文不超过 16 个字，英文不超过 10 个词。"
+)
+_TITLE_PREFIX = re.compile(r"^(?:标题|title)\s*[:：]\s*", re.IGNORECASE)
+
+
+def _clean_generated_title(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    title = lines[0] if lines else ""
+    title = _TITLE_PREFIX.sub("", title).strip()
+    title = title.strip(" \t\r\n\"'“”‘’《》#*-")
+    title = title.rstrip("。.!！?？;；,，")
+    return title[:30].strip()
+
+
+async def generate_title(user: str, assistant: str) -> str:
+    if not config.LLM_BASE_URL or not config.LLM_MODEL:
+        raise UpstreamError("未配置模型接口，无法生成标题")
+    prompt = (
+        f"用户第一条消息：\n{user[:6000].strip()}\n\n"
+        f"助手第一条回复：\n{assistant[:6000].strip()}\n\n"
+        "请生成标题。"
+    )
+    payload = {
+        "model": config.LLM_MODEL,
+        "system": _TITLE_SYSTEM,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 48,
+        "temperature": 0.2,
+        "stream": False,
+        "thinking": {"type": "disabled"},
+    }
+    async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(20, connect=5)) as client:
+        response = await client.post(
+            f"{config.LLM_BASE_URL.rstrip('/')}/v1/messages",
+            headers=_llm_headers(),
+            json=payload,
+        )
+    if response.status_code != 200:
+        raise UpstreamError(f"标题接口返回 {response.status_code}：{response.text[:300]}")
+    body = response.json()
+    blocks = body.get("content") if isinstance(body, dict) else None
+    text = "".join(
+        str(block.get("text") or "")
+        for block in blocks or []
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+    return _clean_generated_title(text)
+
+
 def _format_search_results(results: list[tuple[int, dict]]) -> str:
     lines: list[str] = []
     for index, item in results:

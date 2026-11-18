@@ -19,7 +19,7 @@ from providers import asr as asr_provider
 from providers import ocr as ocr_provider
 from providers import search
 
-app = FastAPI(title="chat-local", version="0.1.0")
+app = FastAPI(title="chat-local", version="0.1.1")
 storage.init()
 
 
@@ -34,6 +34,11 @@ def guard(request: Request) -> None:
 @app.get("/api/chat/sessions")
 def list_sessions() -> dict:
     return {"sessions": storage.list_sessions()}
+
+
+@app.get("/api/chat/search")
+def search_sessions(q: str = "") -> dict:
+    return {"results": storage.search_sessions(q)}
 
 
 @app.get("/api/chat/sessions/{session_id}")
@@ -375,6 +380,22 @@ async def ocr(request: Request, file: UploadFile = File(...)) -> dict:
     except ocr_provider.ProviderError as error:
         raise HTTPException(status_code=503, detail=str(error))
     return {"text": text}
+
+
+@app.post("/api/ai/title")
+async def generate_title(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    user = str(body.get("user") or "").strip()
+    assistant = str(body.get("assistant") or "").strip()
+    if not user and not assistant:
+        raise HTTPException(status_code=400, detail="缺少对话内容")
+    try:
+        return {"title": await ai.generate_title(user, assistant)}
+    except ai.UpstreamError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
 
 @app.post("/api/ai/compress")

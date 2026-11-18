@@ -28,6 +28,9 @@ declare const styles: {
   readonly "divider": string;
   readonly "confirm": string;
   readonly "cellButton": string;
+  readonly "switch": string;
+  readonly "switchOn": string;
+  readonly "switchThumb": string;
   readonly "mobileConfirm": string;
   readonly "importConfirm": string;
   readonly "importConfirmText": string;
