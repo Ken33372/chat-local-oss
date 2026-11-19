@@ -17,6 +17,10 @@ PROVIDER_BLOCKS = {
     "search": ("provider", "base_url", "api_key", "results"),
     "asr": ("provider", "base_url", "api_key", "model"),
     "ocr": ("provider", "base_url", "api_key", "model"),
+    # 重排只在搜索走 SearXNG 时起作用，配置项与其他自建后端同构
+    "rerank": ("provider", "base_url", "api_key", "model"),
+    # 朗读多两个字段：音色名与返回容器（wav/mp3/opus/pcm）
+    "tts": ("provider", "base_url", "api_key", "model", "voice", "response_format"),
 }
 
 
@@ -79,6 +83,12 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
                 item["results"] = 6
         else:
             item["model"] = _text(block.get("model"), 200)
+        if name == "tts":
+            item["voice"] = _text(block.get("voice"), 100)
+            audio_format = _text(block.get("response_format"), 20).lower() or "wav"
+            if audio_format not in ("wav", "mp3", "opus", "pcm"):
+                raise ValueError("朗读返回格式只能是 wav / mp3 / opus / pcm")
+            item["response_format"] = audio_format
         result[name] = item
     return result
 

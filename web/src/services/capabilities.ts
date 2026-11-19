@@ -7,6 +7,7 @@ type Capabilities = {
   search: boolean
   asr: boolean
   ocr: boolean
+  tts: boolean
   contextLimit: number
 }
 
@@ -16,6 +17,7 @@ export const useCapabilities = create<Capabilities>(() => ({
   search: true,
   asr: true,
   ocr: true,
+  tts: true,
   contextLimit: 262144,
 }))
 
@@ -39,6 +41,7 @@ export const loadCapabilities = async (): Promise<void> => {
       search: Boolean(caps.search),
       asr: Boolean(caps.asr),
       ocr: Boolean(caps.ocr),
+      tts: Boolean(caps.tts),
       contextLimit: Number(body.limits?.context) || 262144,
     })
   } catch {

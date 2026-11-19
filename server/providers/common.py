@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 import httpx
 
 
@@ -25,6 +27,14 @@ def endpoint(base: str, path: str) -> str:
     if base.endswith(path):
         return base
     return join(base, path)
+
+
+def api_url(base: str, path: str) -> str:
+    """各家的路由不统一：Base URL 只填到主机或 /v1 时才拼标准路径；
+    已经带别的路径（如 /rerank、/api/tts/speech）就原样请求，不能逼用户改服务。"""
+    base = (base or "").rstrip("/")
+    tail = urlsplit(base).path.rstrip("/")
+    return base if tail and tail != "/v1" else endpoint(base, path)
 
 
 def detail(response: httpx.Response) -> str:

@@ -77,6 +77,12 @@ def _block(name: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _domains(name: str, file_value: object) -> list[str]:
+    """站点规则：环境变量是逗号串，config.json 里可以是数组，两种都收。"""
+    raw = file_value if isinstance(file_value, (list, tuple)) else _env(name).replace("\n", ",")
+    return [str(item).strip().lower() for item in raw if str(item).strip()]
+
+
 def _default_base(provider: str, key: str) -> str:
     if provider == "deepseek" or (key and provider == "none"):
         return "https://api.deepseek.com"
@@ -134,10 +140,40 @@ def _compute() -> dict:
     )
     ocr_model = _pick("OCR_MODEL", ocr.get("model"), "gpt-4o-mini")
 
+    # 朗读：仅自建后端使用；云端模式的朗读走 DeepSeek 官方工具接口，不看这几项
+    tts = _block("tts")
+    tts_provider = _pick("TTS_PROVIDER", tts.get("provider"), "none").lower()
+    tts_base = _pick(
+        "TTS_BASE_URL", tts.get("base_url"), _default_base(tts_provider, deepseek_key)
+    ).rstrip("/")
+    tts_key = _pick(
+        "TTS_API_KEY", tts.get("api_key"), deepseek_key if tts_provider == "deepseek" else ""
+    )
+    tts_model = _pick("TTS_MODEL", tts.get("model"), "tts-1")
+    tts_voice = _pick("TTS_VOICE", tts.get("voice"), "")
+    tts_format = _pick("TTS_RESPONSE_FORMAT", tts.get("response_format"), "wav").lower()
+    tts_max_chars = _int_env("TTS_MAX_CHARS", 4000)
+    # template 模式：URL、请求体 JSON 模板、取音方式都可自定义，只能写在 .env 里
+    tts_template_url = _env("TTS_TEMPLATE_URL").rstrip("/")
+    tts_template_body = _env("TTS_TEMPLATE_BODY")
+    tts_template_audio = _env("TTS_TEMPLATE_AUDIO") or "body"
+    tts_template_headers = _env("TTS_TEMPLATE_HEADERS")
+
     try:
         search_results = int(_pick("SEARCH_RESULTS", search.get("results"), "6") or 6)
     except ValueError:
         search_results = 6
+
+    # 重排：只有配了接口，SearXNG 这一路才翻页聚合候选（见 providers/rerank.py）
+    rerank = _block("rerank")
+    rerank_provider = _pick("RERANK_PROVIDER", rerank.get("provider"), "none").lower()
+    rerank_base = _pick("RERANK_BASE_URL", rerank.get("base_url"), "").rstrip("/")
+    rerank_key = _pick("RERANK_API_KEY", rerank.get("api_key"), "")
+    rerank_model = _pick("RERANK_MODEL", rerank.get("model"), "")
+    try:
+        rerank_timeout = float(_env("RERANK_TIMEOUT", "20"))
+    except ValueError:
+        rerank_timeout = 20.0
 
     return {
         "DEEPSEEK_API_KEY": deepseek_key,
@@ -154,10 +190,37 @@ def _compute() -> dict:
         "OCR_BASE_URL": ocr_base,
         "OCR_API_KEY": ocr_key,
         "OCR_MODEL": ocr_model,
+        "TTS_PROVIDER": tts_provider,
+        "TTS_BASE_URL": tts_base,
+        "TTS_API_KEY": tts_key,
+        "TTS_MODEL": tts_model,
+        "TTS_VOICE": tts_voice,
+        "TTS_RESPONSE_FORMAT": tts_format,
+        "TTS_MAX_CHARS": tts_max_chars,
+        "TTS_TEMPLATE_URL": tts_template_url,
+        "TTS_TEMPLATE_BODY": tts_template_body,
+        "TTS_TEMPLATE_AUDIO": tts_template_audio,
+        "TTS_TEMPLATE_HEADERS": tts_template_headers,
         "SEARCH_PROVIDER": _pick("SEARCH_PROVIDER", search.get("provider"), "none").lower(),
         "SEARCH_BASE_URL": _pick("SEARCH_BASE_URL", search.get("base_url"), "").rstrip("/"),
         "SEARCH_API_KEY": _pick("SEARCH_API_KEY", search.get("api_key"), ""),
         "SEARCH_RESULTS": search_results,
+        # 站点规则与候选聚合参数：环境变量或 config.json 均可，向导界面不暴露
+        "SEARCH_ALLOWED_DOMAINS": _domains(
+            "SEARCH_ALLOWED_DOMAINS", search.get("allowed_domains")
+        ),
+        "SEARCH_BLOCKED_DOMAINS": _domains(
+            "SEARCH_BLOCKED_DOMAINS", search.get("blocked_domains")
+        ),
+        "SEARCH_CANDIDATE_TARGET": _int_env("SEARCH_CANDIDATE_TARGET", 20),
+        "SEARCH_CANDIDATE_MAX": _int_env("SEARCH_CANDIDATE_MAX", 60),
+        "SEARCH_MAX_PAGES": _int_env("SEARCH_MAX_PAGES", 5),
+        "SEARCH_SNIPPET_CHARS": _int_env("SEARCH_SNIPPET_CHARS", 500),
+        "RERANK_PROVIDER": rerank_provider,
+        "RERANK_BASE_URL": rerank_base,
+        "RERANK_API_KEY": rerank_key,
+        "RERANK_MODEL": rerank_model,
+        "RERANK_TIMEOUT": rerank_timeout,
     }
 
 
@@ -183,4 +246,6 @@ def capabilities() -> dict:
         "search": search_ready,
         "asr": ASR_PROVIDER in ("deepseek", "openai") and bool(ASR_BASE_URL),
         "ocr": OCR_PROVIDER in ("deepseek", "openai") and bool(OCR_BASE_URL),
+        "tts": (TTS_PROVIDER in ("deepseek", "openai", "engine") and bool(TTS_BASE_URL))
+        or (TTS_PROVIDER == "template" and bool(TTS_TEMPLATE_URL or TTS_BASE_URL)),
     }

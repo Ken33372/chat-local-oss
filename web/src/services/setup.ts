@@ -13,7 +13,16 @@ export type SetupStatus = {
   search: { provider: string; base_url: string; has_key: boolean; results: number }
   asr: { provider: string; base_url: string; has_key: boolean; model: string }
   ocr: { provider: string; base_url: string; has_key: boolean; model: string }
-  capabilities: { llm: boolean; search: boolean; asr: boolean; ocr: boolean }
+  rerank: { provider: string; base_url: string; has_key: boolean; model: string }
+  tts: {
+    provider: string
+    base_url: string
+    has_key: boolean
+    model: string
+    voice: string
+    response_format: string
+  }
+  capabilities: { llm: boolean; search: boolean; asr: boolean; ocr: boolean; tts: boolean }
 }
 
 export type SetupBody = {
@@ -27,6 +36,15 @@ export type SetupBody = {
   search: { provider: string; base_url: string; api_key: string | null; results: number }
   asr: { provider: string; base_url: string; api_key: string | null; model: string }
   ocr: { provider: string; base_url: string; api_key: string | null; model: string }
+  rerank: { provider: string; base_url: string; api_key: string | null; model: string }
+  tts: {
+    provider: string
+    base_url: string
+    api_key: string | null
+    model: string
+    voice: string
+    response_format: string
+  }
 }
 
 const headers = { 'X-Chat-Local': '1', 'Content-Type': 'application/json' }

@@ -12,7 +12,7 @@ const TOOLS_BASE_URL = `${API_ORIGIN}/v1/tools`
 
 export type TtsVoice = 'stella' | 'tide'
 
-/** TTS 输出的裸 PCM 参数：24kHz、单声道、16-bit 小端 */
+/** TTS 裸 PCM 的参数：24kHz、单声道、16-bit 小端（云端与 provider=deepseek 走这一种；带容器的格式由 MIME 判断） */
 export const TTS_SAMPLE_RATE = 24000
 
 /** 语音识别：audio 为 WAV（单声道 16-bit PCM）或 Ogg Opus，时长不超过 120 秒、大小不超过 8 MiB */
@@ -48,16 +48,13 @@ export const transcribe = async (
   return body.text
 }
 
-/** 语音合成：返回裸 PCM 字节流；服务端默认过滤代码块、表格、引用标记与长公式 */
+/** 云端语音合成：返回裸 PCM 字节流；服务端默认过滤代码块、表格、引用标记与长公式 */
 export const synthesize = async (
   apiKey: string,
   text: string,
   voice: TtsVoice,
   signal: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> => {
-  if (useSettings.getState().mode === 'local') {
-    throw new ApiError('protocol', '本地模式暂未接入语音朗读（TTS）')
-  }
   const response = await request(`${TOOLS_BASE_URL}/tts`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -68,4 +65,33 @@ export const synthesize = async (
     throw new ApiError('protocol', await response.text())
   }
   return response.body
+}
+
+/**
+ * 自建后端朗读第一步：本机后端剥掉 markdown、按句切段。
+ * 分段是因为朗读接口对单次输入有长度上限，整篇一次塞进去会直接报错。
+ */
+export const localSpeechPlan = async (text: string, signal: AbortSignal): Promise<string[]> => {
+  const response = await request('/api/ai/tts/plan', {
+    method: 'POST',
+    headers: { 'X-Chat-Local': '1', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+    signal,
+  })
+  const body = (await response.json()) as { segments?: unknown }
+  return Array.isArray(body.segments) ? body.segments.map((item) => String(item ?? '')) : []
+}
+
+/** 自建后端朗读第二步：一段文本合成一次，返回音频字节与容器类型（MIME 决定怎么解码） */
+export const localSpeechClip = async (
+  segment: string,
+  signal: AbortSignal
+): Promise<{ bytes: ArrayBuffer; mime: string }> => {
+  const response = await request('/api/ai/tts', {
+    method: 'POST',
+    headers: { 'X-Chat-Local': '1', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: segment }),
+    signal,
+  })
+  return { bytes: await response.arrayBuffer(), mime: response.headers.get('content-type') || '' }
 }

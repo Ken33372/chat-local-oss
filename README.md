@@ -58,7 +58,7 @@ Saved settings go to `data/config.json` and take effect immediately, with no res
 | Requires | A DeepSeek API key | Base URL + API key + model name |
 | Web search | DeepSeek server-side tools | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | Your configured ASR provider |
-| Read-aloud | DeepSeek `/v1/tools/tts` | Not supported; no UI entry |
+| Read-aloud | DeepSeek `/v1/tools/tts` | Your configured TTS provider (DeepSeek or OpenAI-compatible `/v1/audio/speech`) |
 | History | Local SQLite | Local SQLite |
 
 ## Configuration
@@ -72,52 +72,32 @@ Nothing is read from other projects.
 
 | Variable | Description |
 |---|---|
-| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek |
+| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Anthropic-compatible endpoint for the self-hosted backend |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | Speech recognition; the OpenAI-compatible default model is `whisper-1` |
+| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | Speech recognition; the OpenAI-compatible default model is `whisper-1`. A root URL gets `/v1/audio/transcriptions` appended, a full URL is used as-is; responses may be `{text}`, `[{text}]`, `{segments:[{text}]}` or plain text |
 | `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only |
+| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only. A root URL gets `/v1/chat/completions` appended, a full URL is used as-is |
+| `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`; no read-aloud button unless it is set |
+| `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` | Read-aloud endpoint. With `deepseek` the base URL can be omitted and `DEEPSEEK_API_KEY` is reused; `openai` means the OpenAI-compatible `/v1/audio/speech`, so self-hosted engines point at their own address (default model name `tts-1`). A base URL that already carries a path — for example `http://host:8090/api/tts/speech` — is requested as-is instead of having the standard path appended |
+| `TTS_VOICE` | Voice name; leave empty for the service default (DeepSeek: `stella`; OpenAI: `alloy`) |
+| `TTS_RESPONSE_FORMAT` | `wav` (default) / `mp3` / `opus` / `pcm`; only applies to the OpenAI-compatible path |
+| `TTS_MAX_CHARS` | Character budget per synthesis request (4000 by default); longer replies are split at sentence boundaries and synthesized segment by segment |
+| `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` | `template` only: exact endpoint URL, JSON body template, how to extract audio (`body` / `base64:<field>` / `url:<field>`), extra request headers |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
 | `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | Web search. `SEARCH_BASE_URL` is optional for Tavily (`https://api.tavily.com`) and AnySearch (`https://api.anysearch.com`), but required for SearXNG. Tavily requires a key; AnySearch keys may be empty (anonymous rate limits) |
+| `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | Optional rerank endpoint — for example `llama-server --reranking` or HuggingFace text-embeddings-inference. A root URL gets `/v1/rerank` appended, a full URL (TEI's `/rerank`) is used as-is; both `{"results":[...]}` and a top-level `[{index,score}]` array are accepted. Only takes effect with `SEARCH_PROVIDER=searxng`; details in [docs/search.md](docs/search.md) |
+| `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG aggregation tuning (20 / 60 / 5 / 500 by default) |
+| `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | Comma-separated site rules. `example.com` also covers its subdomains; `example.com/docs` additionally restricts the path prefix |
 | `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`. Defaults to `vision`, which sends images to the model and **requires vision/multimodal support**; `auto` falls back to OCR when the model rejects the image; `ocr` never sends images and uses OCR only. **If your model is not multimodal, set this to `auto` or `ocr`; otherwise sending an image returns an upstream error.** |
 
 Unconfigured capabilities are hidden in the UI (for example, no ASR means no microphone button), so users do not hit buttons that are guaranteed to fail.
 
-### Example: self-hosted mode with DeepSeek's Anthropic endpoint + Tavily
+### More detail
 
-Use this only in **self-hosted backend** mode. The model comes from DeepSeek, but web search is executed by this project's local tool loop, so it needs its own search provider.
-
-```env
-LLM_BASE_URL=https://api.deepseek.com/anthropic
-LLM_API_KEY=sk-xxx
-LLM_MODEL=deepseek-flash
-
-SEARCH_PROVIDER=tavily
-SEARCH_API_KEY=tvly-xxx
-# SEARCH_BASE_URL is optional; it defaults to https://api.tavily.com
-```
-
-In **DeepSeek Cloud** mode, web search is handled by DeepSeek server-side; do not configure `SEARCH_PROVIDER` for that mode.
-
-### Example: fully self-hosted
-
-```env
-LLM_BASE_URL=http://127.0.0.1:8000
-LLM_API_KEY=
-LLM_MODEL=qwen3
-LLM_CONTEXT_LIMIT=65536
-LLM_MAX_OUTPUT_TOKENS=4096
-
-SEARCH_PROVIDER=searxng
-SEARCH_BASE_URL=http://127.0.0.1:8080
-
-ASR_PROVIDER=openai
-ASR_BASE_URL=http://127.0.0.1:9000
-ASR_API_KEY=
-ASR_MODEL=whisper-1
-```
+- Two copy-paste configuration examples, plus interface compatibility notes for read-aloud / ASR / OCR / rerank: [docs/providers.md](docs/providers.md)
+- SearXNG result quality, the rerank switch, paging aggregation and measured timings: [docs/search.md](docs/search.md)
 
 ## Features
 
@@ -128,7 +108,7 @@ LLM, search, ASR, and OCR are configured independently:
 - **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint).
 - **ASR:** DeepSeek `/v1/tools/asr` or an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
 - **OCR:** DeepSeek `/v1/tools/ocr` (documents and images) or an OpenAI-compatible vision endpoint (images only).
-- **Search:** Tavily, AnySearch, SearXNG, or off.
+- **Search:** Tavily, AnySearch, SearXNG, or off. With SearXNG you can add your own reranker to enable multi-page aggregation and relevance ordering; without one, search stays single-page.
 - Unconfigured capabilities are hidden automatically. OpenAI-compatible LLMs are not supported yet.
 
 ### Conversations and data
@@ -147,7 +127,7 @@ LLM, search, ASR, and OCR are configured independently:
 
 ### UI and configuration
 
-- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration.
+- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Choosing SearXNG as the search provider reveals a rerank group (Base URL / API Key / Model); filling in the Base URL is what turns on multi-page aggregation. Under Advanced you can also configure read-aloud: provider, base URL, key, model, voice and response format.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
 
@@ -158,11 +138,11 @@ LLM, search, ASR, and OCR are configured independently:
 | Chat / thinking / stop / continue | DeepSeek API | Anthropic-compatible endpoint |
 | Web search and page reading | DeepSeek server-side tools; the tools themselves are not billed | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | `deepseek` or OpenAI-compatible ASR |
-| Read-aloud | DeepSeek `/v1/tools/tts` | Not supported |
+| Read-aloud | DeepSeek `/v1/tools/tts` | `deepseek` or OpenAI-compatible `/v1/audio/speech` |
 | Images | Sent directly to DeepSeek | Vision first; optional OCR fallback |
 | PDF / Word / PPT | DeepSeek Files API | DeepSeek OCR or disabled |
 
-Read-aloud (TTS) is available only in DeepSeek Cloud mode; the self-hosted backend has no read-aloud entry. Cloud TTS has not been tested against the real service and falls under "not broadly tested."
+Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `engine` / `template`) covering common self-hosted TTS servers; the shape table, the four `template` settings and what is explicitly out of scope (e.g. ComfyUI async workflows) are in [docs/providers.md](docs/providers.md#the-four-read-aloud-request-shapes).
 
 ## Limitations
 
@@ -170,7 +150,8 @@ Read-aloud (TTS) is available only in DeepSeek Cloud mode; the self-hosted backe
 - The self-hosted LLM currently supports only the Anthropic-compatible protocol (DeepSeek's `/anthropic` endpoint and other compatible services). OpenAI-compatible LLMs are not supported yet.
 - OpenAI-compatible OCR handles images only; use DeepSeek OCR for PDF/Word/PPT or convert them to images first.
 - Import/export currently supports only the DeepSeek export format.
-- The self-hosted backend has no TTS.
+- Read-aloud has not been verified by listening on either path; whether self-hosted read-aloud works depends on your service actually implementing `/v1/audio/speech`.
+- The two known SearXNG pitfalls (Brave jump links, upstream engine rate limits) are documented in [docs/search.md](docs/search.md#two-known-sources-of-dirty-data).
 
 ## Security and privacy
 
@@ -184,6 +165,12 @@ Read-aloud (TTS) is available only in DeepSeek Cloud mode; the self-hosted backe
 ## AI-assisted development disclosure
 
 Substantial parts of the code, documentation, and refactoring were generated or modified with **DeepSeek in Qoder**, then reviewed, run, and accepted or rejected by a human. AI-generated code may contain bugs, omissions, or security issues; evaluate it before use. This project is not affiliated with DeepSeek.
+
+## Acknowledgements
+
+The SearXNG result-quality work — paging aggregation with `pageno` (candidate target and ceiling, stop rules), cross-page de-duplication, snippet cleaning, domain allow/block rules, and reranking the aggregate instead of dumping it into the context — was informed by the search tool of [DdogezD/claudium](https://github.com/DdogezD/claudium), whose default values (20 candidates, 5 pages, 500-character snippets) are reused here.
+
+That repository declares no license, so nothing was copied from it: the ideas were reimplemented in this project's own code, and claudium is not a dependency here.
 
 ## License
 

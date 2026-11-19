@@ -7,7 +7,7 @@ import json
 import httpx
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -18,6 +18,7 @@ import storage
 from providers import asr as asr_provider
 from providers import ocr as ocr_provider
 from providers import search
+from providers import tts as tts_provider
 
 app = FastAPI(title="chat-local", version="0.1.1")
 storage.init()
@@ -249,6 +250,22 @@ def _masked_status() -> dict:
             "has_key": bool(config.OCR_API_KEY),
             "model": config.OCR_MODEL,
         },
+        "rerank": {
+            "provider": config.RERANK_PROVIDER,
+            "base_url": config.RERANK_BASE_URL,
+            "has_key": bool(config.RERANK_API_KEY),
+            "model": config.RERANK_MODEL,
+        },
+        "tts": {
+            "provider": config.TTS_PROVIDER,
+            "base_url": config.TTS_BASE_URL,
+            "has_key": bool(config.TTS_API_KEY),
+            "model": config.TTS_MODEL,
+            "voice": config.TTS_VOICE,
+            "response_format": config.TTS_RESPONSE_FORMAT,
+            "template_url": config.TTS_TEMPLATE_URL,
+            "template_audio": config.TTS_TEMPLATE_AUDIO,
+        },
         "capabilities": caps,
     }
 
@@ -382,6 +399,43 @@ async def ocr(request: Request, file: UploadFile = File(...)) -> dict:
     return {"text": text}
 
 
+@app.post("/api/ai/tts/plan")
+async def tts_plan(request: Request) -> dict:
+    """朗读第一步：本机剥掉 markdown、按句切段，返回每段纯文本。"""
+    guard(request)
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    if not tts_provider.available():
+        raise HTTPException(status_code=400, detail="未配置朗读，请在 .env 设置 TTS_PROVIDER")
+    return tts_provider.plan(str(body.get("text") or ""))
+
+
+@app.post("/api/ai/tts")
+async def tts_speech(request: Request):
+    """朗读第二步：一段文本合成一次，返回音频字节与容器类型。"""
+    guard(request)
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    if not tts_provider.available():
+        raise HTTPException(status_code=400, detail="未配置朗读，请在 .env 设置 TTS_PROVIDER")
+    text = str(body.get("text") or "")
+    try:
+        audio, mime = await asyncio.to_thread(
+            tts_provider.synthesize, text, str(body.get("voice") or "")
+        )
+    except tts_provider.ProviderError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+    return Response(content=audio, media_type=mime)
+
+
 @app.post("/api/ai/title")
 async def generate_title(request: Request) -> dict:
     guard(request)
@@ -421,9 +475,11 @@ async def health() -> dict:
     return {
         "ok": llm.get("ok", False),
         "llm": llm,
-        "search": search.health(),
+        # 搜索健康检查会真发一次 HTTP 探测（SearXNG + 重排），放线程里跑，别卡住事件循环
+        "search": await asyncio.to_thread(search.health),
         "asr": asr_provider.health(),
         "ocr": ocr_provider.health(),
+        "tts": tts_provider.health(),
         "capabilities": config.capabilities(),
         "limits": {
             "context": config.LLM_CONTEXT_LIMIT,

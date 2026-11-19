@@ -1,4 +1,5 @@
 import { useTranslate } from '../../i18n/index.js'
+import { useCapabilities } from '../../services/capabilities.js'
 import { useSettings } from '../../services/settings.js'
 import {
   describeReadAloudError,
@@ -14,9 +15,10 @@ import { ReadingBars } from './ReadingBars.js'
 export const ReadAloudButton = ({ messageId, text }: { messageId: string; text: string }) => {
   const t = useTranslate()
   const local = useSettings((state) => state.mode === 'local')
+  const tts = useCapabilities((state) => state.tts)
   const status = useReadAloud((state) => (state.messageId === messageId ? state.status : 'idle'))
-  // 本地模式还没有 TTS（audio.cpp 远端未部署），不展示按钮
-  if (local) {
+  // 自建后端没配朗读时不展示按钮；云端模式不受探测结果影响（走 DeepSeek 官方工具接口）
+  if (local && !tts) {
     return null
   }
   return (

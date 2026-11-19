@@ -44,7 +44,22 @@ TOOLS = [
         "description": "联网搜索实时信息。返回网页标题、链接和摘要。需要最新事实、新闻或你不确定的信息时调用。",
         "input_schema": {
             "type": "object",
-            "properties": {"query": {"type": "string", "description": "搜索关键词"}},
+            "properties": {
+                "query": {"type": "string", "description": "搜索关键词"},
+                "allowed_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "只保留这些站点的结果，如 [\"gov.cn\", \"wikipedia.org\"]。"
+                        "写域名连同子域一起算，写 域名/路径 可再限定路径前缀。"
+                    ),
+                },
+                "blocked_domains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "排除这些站点的结果，写法同上。",
+                },
+            },
             "required": ["query"],
         },
     },
@@ -338,7 +353,8 @@ async def _prepare_messages(raw: list, force_ocr: bool = False) -> tuple[list[di
 
 
 def _system_prompt(
-    reminder: str, search_enabled: bool, deep: bool, max_rounds: int, summary: str = ""
+    reminder: str, search_enabled: bool, deep: bool, max_rounds: int, summary: str = "",
+    aggregator: bool = False,
 ) -> str:
     parts = [config.DEFAULT_SYSTEM]
     if reminder:
@@ -353,6 +369,14 @@ def _system_prompt(
             )
         else:
             parts.append("你可以调用 web_search 查询实时信息、调用 read_url 阅读网页正文。")
+        if aggregator:
+            parts.append(
+                "本轮搜索走的是自建 SearXNG：它只聚合各家引擎的标题与摘要，不保证是最新内容，"
+                "也可能混进内容农场。因此：具体数字、日期、原话先用 read_url 打开原文核对，"
+                "不要只凭摘要下结论；不同来源的摘要互相矛盾时，把分歧和各自来源都写出来，"
+                "不要挑一条当定论；能用官方公告、原始发布方作依据就优先它们，媒体报道当辅证。"
+                "结果脏时用 blocked_domains 排掉站点，或用 allowed_domains 只留指定站点。"
+            )
         parts.append(
             f"一次回答最多进行 {max_rounds} 轮工具调用；信息足够就直接回答。"
             "工具返回的搜索结果带有编号 [1]、[2]…；引用时必须严格写成方括号数字，"
@@ -433,6 +457,17 @@ async def generate_title(user: str, assistant: str) -> str:
     return _clean_generated_title(text)
 
 
+def _domain_list(value: object) -> list[str]:
+    """模型给的站点规则一般是数组，但偶尔吐成逗号串，两种都收。"""
+    if isinstance(value, str):
+        items = value.replace("\n", ",").split(",")
+    elif isinstance(value, (list, tuple, set)):
+        items = list(value)
+    else:
+        return []
+    return [str(item).strip().lower() for item in items if str(item).strip()]
+
+
 def _format_search_results(results: list[tuple[int, dict]]) -> str:
     lines: list[str] = []
     for index, item in results:
@@ -462,7 +497,12 @@ async def _execute_tool(
                 "搜索关键词为空。",
             )
         try:
-            results = await asyncio.to_thread(search.search, query)
+            results = await asyncio.to_thread(
+                search.search,
+                query,
+                allowed_domains=_domain_list(payload.get("allowed_domains")),
+                blocked_domains=_domain_list(payload.get("blocked_domains")),
+            )
         except Exception as error:
             return (
                 {"type": "web_search_tool_result", "tool_use_id": "", "content": [
@@ -665,7 +705,10 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     title = _title_for(raw_messages)
     payload_base: dict = {
         "model": config.LLM_MODEL,
-        "system": _system_prompt(reminder, search_enabled, deep, max_rounds, summary_text),
+        "system": _system_prompt(
+            reminder, search_enabled, deep, max_rounds, summary_text,
+            aggregator=search.is_searxng(),
+        ),
         "thinking": {"type": "enabled" if thinking else "disabled"},
         "max_tokens": config.LLM_MAX_OUTPUT_TOKENS,
         "stream": True,

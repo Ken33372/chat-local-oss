@@ -37,6 +37,15 @@ type Form = {
   ocrBase: string
   ocrKey: string
   ocrModel: string
+  rerankBase: string
+  rerankKey: string
+  rerankModel: string
+  ttsProvider: string
+  ttsBase: string
+  ttsKey: string
+  ttsModel: string
+  ttsVoice: string
+  ttsFormat: string
 }
 
 const emptyForm: Form = {
@@ -57,6 +66,15 @@ const emptyForm: Form = {
   ocrBase: '',
   ocrKey: '',
   ocrModel: 'gpt-4o-mini',
+  rerankBase: '',
+  rerankKey: '',
+  rerankModel: '',
+  ttsProvider: 'none',
+  ttsBase: '',
+  ttsKey: '',
+  ttsModel: 'tts-1',
+  ttsVoice: '',
+  ttsFormat: 'wav',
 }
 
 const formFromStatus = (status: SetupStatus): Form => ({
@@ -77,6 +95,15 @@ const formFromStatus = (status: SetupStatus): Form => ({
   ocrBase: status.ocr.base_url,
   ocrKey: '',
   ocrModel: status.ocr.model,
+  rerankBase: status.rerank?.base_url ?? '',
+  rerankKey: '',
+  rerankModel: status.rerank?.model ?? '',
+  ttsProvider: status.tts?.provider ?? 'none',
+  ttsBase: status.tts?.base_url ?? '',
+  ttsKey: '',
+  ttsModel: status.tts?.model ?? 'tts-1',
+  ttsVoice: status.tts?.voice ?? '',
+  ttsFormat: status.tts?.response_format ?? 'wav',
 })
 
 /** null 表示沿用已保存的 key；空白输入不会把已有 key 清掉。 */
@@ -108,6 +135,21 @@ const bodyFrom = (form: Form, status: SetupStatus | null): SetupBody => ({
     base_url: form.ocrBase.trim(),
     api_key: keepKey(form.ocrKey, status?.ocr.has_key ?? false),
     model: form.ocrModel.trim(),
+  },
+  rerank: {
+    // 填了 Base URL 就算启用：重排只有 OpenAI 兼容 /v1/rerank 这一种形态
+    provider: form.rerankBase.trim() ? 'openai' : 'none',
+    base_url: form.rerankBase.trim(),
+    api_key: keepKey(form.rerankKey, status?.rerank?.has_key ?? false),
+    model: form.rerankModel.trim(),
+  },
+  tts: {
+    provider: form.ttsProvider,
+    base_url: form.ttsBase.trim(),
+    api_key: keepKey(form.ttsKey, status?.tts?.has_key ?? false),
+    model: form.ttsModel.trim(),
+    voice: form.ttsVoice.trim(),
+    response_format: form.ttsFormat,
   },
 })
 
@@ -272,6 +314,13 @@ export const SetupWizard = () => {
     { value: 'deepseek', label: 'DeepSeek' },
     { value: 'openai', label: 'OpenAI 兼容' },
   ]
+  // 朗读的 provider 比 ASR/OCR 多一档 engine：用 engine 字段选模型的那类推理服务
+  const ttsOptions = [
+    ...toolOptions,
+    { value: 'engine', label: 'engine 字段（自建推理服务）' },
+  ]
+  // 朗读返回容器：wav/mp3/opus 带容器头，浏览器自己判采样率；pcm 是裸流，按 24 kHz 处理
+  const formatOptions = ['wav', 'mp3', 'opus', 'pcm'].map((value) => ({ value, label: value }))
 
   return (
     <Modal
@@ -429,6 +478,42 @@ export const SetupWizard = () => {
                 </label>
               </>
             ) : null}
+            {form.searchProvider === 'searxng' ? (
+              <>
+                <span className={styles.label}>{t('setupRerankProvider')}</span>
+                <p className={styles.hint}>{t('setupRerankHint')}</p>
+                <label className={styles.field}>
+                  <span className={styles.label}>Base URL</span>
+                  <input
+                    className={styles.input}
+                    value={form.rerankBase}
+                    disabled={disabled}
+                    placeholder="http://127.0.0.1:8000"
+                    onChange={(event) => update('rerankBase', event.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>API Key</span>
+                  <input
+                    className={styles.input}
+                    type="password"
+                    value={form.rerankKey}
+                    disabled={disabled}
+                    placeholder={status?.rerank?.has_key ? t('setupApiKeySaved') : ''}
+                    onChange={(event) => update('rerankKey', event.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>{t('setupModel')}</span>
+                  <input
+                    className={styles.input}
+                    value={form.rerankModel}
+                    disabled={disabled}
+                    onChange={(event) => update('rerankModel', event.target.value)}
+                  />
+                </label>
+              </>
+            ) : null}
             <ProviderSelect
               label={t('setupAsrProvider')}
               value={form.asrProvider}
@@ -507,6 +592,71 @@ export const SetupWizard = () => {
                     onChange={(event) => update('ocrModel', event.target.value)}
                   />
                 </label>
+              </>
+            ) : null}
+            <ProviderSelect
+              label={t('setupTtsProvider')}
+              value={form.ttsProvider}
+              options={ttsOptions}
+              disabled={disabled}
+              onChange={(value) => update('ttsProvider', value)}
+            />
+            {form.ttsProvider !== 'none' ? (
+              <>
+                <p className={styles.hint}>{t('setupTtsHint')}</p>
+                <label className={styles.field}>
+                  <span className={styles.label}>Base URL</span>
+                  <input
+                    className={styles.input}
+                    value={form.ttsBase}
+                    disabled={disabled}
+                    placeholder={
+                      form.ttsProvider === 'engine'
+                        ? 'http://127.0.0.1:8090/api/tts/speech'
+                        : 'http://127.0.0.1:8000/v1'
+                    }
+                    onChange={(event) => update('ttsBase', event.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>API Key</span>
+                  <input
+                    className={styles.input}
+                    type="password"
+                    value={form.ttsKey}
+                    disabled={disabled}
+                    placeholder={status?.tts?.has_key ? t('setupApiKeySaved') : ''}
+                    onChange={(event) => update('ttsKey', event.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>
+                    {form.ttsProvider === 'engine' ? t('setupTtsEngine') : t('setupModel')}
+                  </span>
+                  <input
+                    className={styles.input}
+                    value={form.ttsModel}
+                    disabled={disabled}
+                    onChange={(event) => update('ttsModel', event.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>{t('setupTtsVoice')}</span>
+                  <input
+                    className={styles.input}
+                    value={form.ttsVoice}
+                    disabled={disabled}
+                    placeholder={t('setupTtsVoicePlaceholder')}
+                    onChange={(event) => update('ttsVoice', event.target.value)}
+                  />
+                </label>
+                <ProviderSelect
+                  label={t('setupTtsFormat')}
+                  value={form.ttsFormat}
+                  options={formatOptions}
+                  disabled={disabled}
+                  onChange={(value) => update('ttsFormat', value)}
+                />
               </>
             ) : null}
           </details>
