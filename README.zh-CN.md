@@ -27,24 +27,46 @@
 
 ## 快速开始
 
-需要 Python 3.10+ 与 Node.js 20+。Windows x64 也可以直接下载 [Releases](https://github.com/Ken33372/chat-local-oss/releases) 里的便携包，解压后双击 `start.bat`，无需安装 Python 或 Node。
+### 方式一：从源码运行
+
+1. **准备环境**：Python 3.10+、Node.js 20+（`python --version`、`node --version` 能显示版本即可）。
+2. **拿到源码**：
+
+   ```bash
+   git clone https://github.com/Ken33372/chat-local-oss.git
+   cd chat-local-oss
+   ```
+
+   没有 git 就下载仓库 ZIP 解压，效果一样。
+3. **装后端依赖并构建前端**（都在项目根目录执行）：
+
+   ```bash
+   pip install -r requirements.txt
+   cd web && npm install && npm run build && cd ..
+   ```
+
+   想隔离 Python 依赖，可以先 `python -m venv .venv`，激活后再执行 `pip install`。
+4. **启动后端**：
+
+   ```bash
+   python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
+   ```
+5. **打开验证**：浏览器访问 `http://127.0.0.1:17865/`；`http://127.0.0.1:17865/api/health` 能返回 JSON 说明服务正常。
+
+Windows 上第 3 步的前端部分和第 4 步也可以换成现成脚本：`pip install -r requirements.txt` 仍要手动执行一次，然后双击 `build.bat`（装前端依赖 + 构建），再双击 `start.bat`（启动并自动打开浏览器），`stop.bat` 停止。
+
+### 方式二：便携包（不用装环境）
+
+Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local-oss/releases) 里的便携包，解压后双击 `start.bat`，无需安装 Python 或 Node。
 
 > 预构建便携包**不保证是最新版**：它按发版时点打包，落后于 `main` 是常态。想要最新功能，请从源码运行，或自行跑 `build.bat`。
 
-```bash
-pip install -r requirements.txt
+### 首次配置
 
-cd web && npm install && npm run build && cd ..
-
-python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
-```
-
-Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0.0.1:17865/`。
-
-首次打开会出现配置向导：
+第一次打开会出现配置向导：
 
 - **DeepSeek 云端**：切到云端模式，在设置里填 DeepSeek API Key。
-- **自建后端**：填 Base URL、API Key、模型名；高级里再配搜索、ASR、OCR（搜索选 SearXNG 时会多出一组重排配置）。
+- **自建后端**：填 Base URL、API Key、模型名；高级里再配搜索、ASR、OCR、朗读（搜索选 SearXNG 时会多出一组重排配置）。
 
 保存后写入 `data/config.json`，立即生效，不需要重启。也可以跳过向导，复制 `.env.example` 为 `.env` 手动配置；环境变量优先于向导保存的值。
 

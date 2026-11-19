@@ -27,30 +27,50 @@ The main differences are local SQLite storage and the features listed below. Any
 
 ## Quick start
 
-Requirements: Python 3.10+ and Node.js 20+.
+### Option 1: run from source
 
-Windows x64 users can also download the portable ZIP from [Releases](https://github.com/Ken33372/chat-local-oss/releases), unzip it, and run `start.bat` — no Python or Node installation is required.
+1. **Requirements**: Python 3.10+ and Node.js 20+ (`python --version` and `node --version` should print versions).
+2. **Get the source**:
+
+   ```bash
+   git clone https://github.com/Ken33372/chat-local-oss.git
+   cd chat-local-oss
+   ```
+
+   No git? Download the repository ZIP and unzip it — same result.
+3. **Install backend dependencies and build the frontend** (from the project root):
+
+   ```bash
+   pip install -r requirements.txt
+   cd web && npm install && npm run build && cd ..
+   ```
+
+   To isolate Python packages, run `python -m venv .venv`, activate it, then `pip install`.
+4. **Start the backend**:
+
+   ```bash
+   python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
+   ```
+5. **Verify**: open `http://127.0.0.1:17865/`; `http://127.0.0.1:17865/api/health` returning JSON means the server is up.
+
+On Windows, the frontend half of step 3 and step 4 can be replaced by the provided scripts: run `pip install -r requirements.txt` once yourself, then double-click `build.bat` (installs frontend dependencies and builds), then `start.bat` (starts the server and opens the browser); `stop.bat` stops it.
+
+### Option 2: portable ZIP (no environment needed)
+
+Windows x64 users can download the portable ZIP from [Releases](https://github.com/Ken33372/chat-local-oss/releases), unzip it, and run `start.bat` — no Python or Node installation is required.
 
 > **The prebuilt portable ZIP is not guaranteed to be the latest version.** It is packaged at release time and normally lags behind `main`; for the newest features run from source or build it yourself with `build.bat`.
 
-```bash
-pip install -r requirements.txt
-
-cd web && npm install && npm run build && cd ..
-
-python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
-```
-
-On Windows you can also run `build.bat` and then `start.bat`. Open `http://127.0.0.1:17865/`.
+### First-run configuration
 
 The first visit shows a setup wizard:
 
 - **DeepSeek Cloud:** switch to cloud mode, then enter your DeepSeek API key in Settings.
-- **Self-hosted backend:** enter the base URL, API key, and model name; configure search, ASR, and OCR under Advanced.
+- **Self-hosted backend:** enter the base URL, API key, and model name; configure search, ASR, OCR and read-aloud under Advanced (choosing SearXNG reveals the rerank group).
 
 Saved settings go to `data/config.json` and take effect immediately, with no restart. You can skip the wizard and copy `.env.example` to `.env` instead; environment variables take precedence over values saved by the wizard.
 
-> Cloud mode still requires the local backend to be running, because chats and attachments are stored in local SQLite rather than synced to a DeepSeek account.
+> Cloud mode still needs the local backend running, because conversations and attachments live in local SQLite rather than DeepSeek cloud sync.
 
 ## Two modes
 
