@@ -4,42 +4,95 @@ README 只放"用不用、怎么跑起来"；这份文档放两类细节：可�
 
 ## 配置示例
 
-### 示例：自建后端模式，用 DeepSeek 的 Anthropic 接口当模型 + Tavily 搜索
+所有配置都能写进项目根目录的 `.env`，或由首次运行向导写入 `data/config.json`（环境变量优先）。各能力互不绑定：没配的那一项只是不显示入口，不影响其他功能。
 
-这个示例只适用于**自建后端模式**。模型来自 DeepSeek，但联网搜索由本项目的本地工具循环执行，所以需要单独配置搜索 provider。
+**每个能力最少要填什么**
+
+| 能力 | 必填 | 可省（有默认） |
+|---|---|---|
+| 对话 | `LLM_BASE_URL`、`LLM_MODEL` | `LLM_API_KEY`（本机服务可空）、`LLM_CONTEXT_LIMIT`、`LLM_MAX_OUTPUT_TOKENS` |
+| 搜索 | `SEARCH_PROVIDER`；选 `searxng` 时还要 `SEARCH_BASE_URL` | Tavily / AnySearch 的 Base URL、`SEARCH_RESULTS` |
+| 重排 | `RERANK_PROVIDER` 与 `RERANK_BASE_URL`，**两个都要** | `RERANK_MODEL`、`RERANK_API_KEY`、`RERANK_TIMEOUT` |
+| 语音输入 | `ASR_PROVIDER` 与 `ASR_BASE_URL` | `ASR_MODEL`（默认 `whisper-1`）、`ASR_API_KEY` |
+| OCR | `OCR_PROVIDER` 与 `OCR_BASE_URL` | `OCR_MODEL`（默认 `gpt-4o-mini`）、`OCR_API_KEY` |
+| 朗读 | `TTS_PROVIDER` 与 `TTS_BASE_URL`；`engine` 这一档还必须填 `TTS_VOICE` | `TTS_MODEL`（默认 `tts-1`）、`TTS_RESPONSE_FORMAT`、`TTS_MAX_CHARS` |
+
+只填 `RERANK_BASE_URL` 不会开启重排：`RERANK_PROVIDER` 默认是 `none`，两项缺一不可。
+
+### 示例 1：只有模型（最小可用）
 
 ```env
-LLM_BASE_URL=https://api.deepseek.com/anthropic
-LLM_API_KEY=sk-xxx
-LLM_MODEL=deepseek-flash
-
-SEARCH_PROVIDER=tavily
-SEARCH_API_KEY=tvly-xxx
-# SEARCH_BASE_URL 可省略，默认 https://api.tavily.com
+# 地址填到 /v1 之前：后端自己会拼 /v1/messages
+LLM_BASE_URL=http://127.0.0.1:8000
+LLM_MODEL=qwen3
+# llama.cpp / Ollama 这类本机服务通常不校验 key，留空即可
+LLM_API_KEY=
 ```
 
-如果使用 **DeepSeek 云端模式**，联网搜索由 DeepSeek 服务端完成，不要再配置 `SEARCH_PROVIDER`。
+拿到：对话、思考、历史、上下文管理。搜索、语音、OCR、朗读都不显示入口。
 
-### 示例：完全自建
+注意模型端必须是 **Anthropic 兼容协议**（`POST /v1/messages`）。llama.cpp 的 OpenAI 接口（`/v1/chat/completions`）不行，需要前面顶一个 Anthropic 兼容网关。
+
+### 示例 2：本地全家桶（模型 + 搜索 + 语音 + 朗读）
 
 ```env
+# ---- 模型 ----
 LLM_BASE_URL=http://127.0.0.1:8000
 LLM_API_KEY=
 LLM_MODEL=qwen3
 LLM_CONTEXT_LIMIT=65536
 LLM_MAX_OUTPUT_TOKENS=4096
 
+# ---- 搜索：自建 SearXNG，不需要 key ----
 SEARCH_PROVIDER=searxng
 SEARCH_BASE_URL=http://127.0.0.1:8080
 
+# ---- 重排：可选，但 SearXNG 的翻页聚合以它为前提 ----
+# 接口要 OpenAI 兼容的 /v1/rerank（llama-server --reranking、TEI 的 /rerank 都行）
+RERANK_PROVIDER=openai
+RERANK_BASE_URL=http://127.0.0.1:8081
+RERANK_MODEL=bge-reranker-v2-m3
+
+# ---- 语音输入：whisper.cpp 这类 OpenAI 兼容 ASR ----
 ASR_PROVIDER=openai
 ASR_BASE_URL=http://127.0.0.1:9000
-ASR_API_KEY=
 ASR_MODEL=whisper-1
+ASR_API_KEY=
 
-RERANK_BASE_URL=http://127.0.0.1:8080
-RERANK_MODEL=bge-reranker-v2-m3
+# ---- OCR：只有图片走视觉时可以不配；PDF/Word/PPT 需要 DeepSeek OCR ----
+OCR_PROVIDER=openai
+OCR_BASE_URL=http://127.0.0.1:9001
+OCR_MODEL=gpt-4o-mini
+OCR_API_KEY=
+
+# ---- 朗读 ----
+TTS_PROVIDER=openai
+TTS_BASE_URL=http://127.0.0.1:9002
+TTS_MODEL=tts-1
+TTS_VOICE=alloy
+TTS_RESPONSE_FORMAT=wav
 ```
+
+每一项都可以单独删掉：删了对应功能就从界面消失，其他能力不受影响。SearXNG 的那一串调优变量（候选数、翻页数、摘要长度）走默认值即可，细节见 [search.zh-CN.md](search.zh-CN.md)。
+
+### 示例 3：一把 DeepSeek key 打通
+
+```env
+DEEPSEEK_API_KEY=sk-xxx
+# 朗读不随 key 自动打开，想用再显式声明（地址和 key 会自动复用）
+TTS_PROVIDER=deepseek
+```
+
+自动生效的部分：
+
+- LLM → `https://api.deepseek.com/anthropic`，模型 `deepseek-flash`；
+- 语音输入 → `deepseek` 的 `/v1/tools/asr`；
+- OCR → `deepseek` 的 `/v1/tools/ocr`（支持 PDF/Word/PPT 和图片）；
+- 朗读 → 只在你写了 `TTS_PROVIDER=deepseek` 后启用（地址和 key 自动复用这把 key）。
+
+**搜索不会因为这把 key 自动打开。** 自建后端的联网搜索要由本地工具循环执行，必须自己配 `SEARCH_PROVIDER`（Tavily / AnySearch / SearXNG）；只有 DeepSeek 云端模式才是服务端搜索。
+
+想覆盖任何一项，直接写对应的环境变量即可（环境变量优先于这把 key 带来的默认值）。
 
 ## 朗读的四种接口形状
 
