@@ -29,6 +29,8 @@
 
 需要 Python 3.10+ 与 Node.js 20+。Windows x64 也可以直接下载 [Releases](https://github.com/Ken33372/chat-local-oss/releases) 里的便携包，解压后双击 `start.bat`，无需安装 Python 或 Node。
 
+> 预构建便携包**不保证是最新版**：它按发版时点打包，落后于 `main` 是常态。想要最新功能，请从源码运行，或自行跑 `build.bat`。
+
 ```bash
 pip install -r requirements.txt
 

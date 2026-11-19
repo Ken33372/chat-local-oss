@@ -31,6 +31,8 @@ Requirements: Python 3.10+ and Node.js 20+.
 
 Windows x64 users can also download the portable ZIP from [Releases](https://github.com/Ken33372/chat-local-oss/releases), unzip it, and run `start.bat` — no Python or Node installation is required.
 
+> **The prebuilt portable ZIP is not guaranteed to be the latest version.** It is packaged at release time and normally lags behind `main`; for the newest features run from source or build it yourself with `build.bat`.
+
 ```bash
 pip install -r requirements.txt
 
