@@ -61,14 +61,21 @@ Windows x64 users can download the portable ZIP from [Releases](https://github.c
 
 > **The prebuilt portable ZIP is not guaranteed to be the latest version.** It is packaged at release time and normally lags behind `main`; for the newest features run from source or build it yourself with `build.bat`.
 
-### First-run configuration
+### Configuration: two sources, environment variables first
 
-The first visit shows a setup wizard:
+Two sources, in descending priority:
+
+1. **Environment variables / `.env` in the project root** — meant for advanced users; you can skip the wizard entirely.
+2. **`data/config.json` written by the first-run wizard** — meant for regular users.
+
+Once a model is configured through `.env`, the wizard no longer pops up (it only appears when no model is configured). Restart the server after editing `.env`.
+
+If nothing is configured yet, the first visit shows the wizard:
 
 - **DeepSeek Cloud:** switch to cloud mode, then enter your DeepSeek API key in Settings.
 - **Self-hosted backend:** enter the base URL, API key, and model name; configure search, ASR, OCR and read-aloud under Advanced (choosing SearXNG reveals the rerank group).
 
-Saved settings go to `data/config.json` and take effect immediately, with no restart. You can skip the wizard and copy `.env.example` to `.env` instead; environment variables take precedence over values saved by the wizard.
+Wizard settings go to `data/config.json` and take effect immediately, with no restart. To reopen the wizard later: Settings → General → Service configuration.
 
 > Cloud mode still needs the local backend running, because conversations and attachments live in local SQLite rather than DeepSeek cloud sync.
 
@@ -87,7 +94,7 @@ Saved settings go to `data/config.json` and take effect immediately, with no res
 
 Configuration has two sources, in descending priority:
 
-1. Environment variables / `.env` in the project root (suitable for deployment)
+1. Environment variables / `.env` in the project root (suitable for advanced users)
 2. `data/config.json` written by the first-run wizard (suitable for regular users)
 
 Nothing is read from other projects.
