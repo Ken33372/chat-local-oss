@@ -61,23 +61,11 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 > 预构建便携包**不保证是最新版**：它按发版时点打包，落后于 `main` 是常态。想要最新功能，请从源码运行，或自行跑 `build.bat`。
 
-### 配置：两种来源，环境变量优先
+### 第一次打开
 
-配置有两个来源，优先级从高到低：
+还没配置时，首次打开会出现配置向导：**DeepSeek 云端**填 API Key 即可；**自建后端**填 Base URL、API Key、模型名，高级里再配搜索、ASR、OCR、朗读。保存后立即生效。
 
-1. **环境变量 / 项目根目录的 `.env`** —— 适合高级用户，可以完全不经过向导。
-2. **首次运行向导写入的 `data/config.json`** —— 适合普通用户。
-
-已经用 `.env` 配好模型的话，页面不会再弹向导（向导只在检测到模型未配置时出现）；改完 `.env` 重启服务即可生效。
-
-还没配置时，第一次打开会出现向导：
-
-- **DeepSeek 云端**：切到云端模式，在设置里填 DeepSeek API Key。
-- **自建后端**：填 Base URL、API Key、模型名；高级里再配搜索、ASR、OCR、朗读（搜索选 SearXNG 时会多出一组重排配置）。
-
-向导保存后写进 `data/config.json`，立即生效，不需要重启；之后再打开向导的入口在 设置 → 通用设置 → 服务配置。
-
-> 云端模式仍然需要启动本机后端，因为会话和附件存在本机 SQLite，不走 DeepSeek 账号云同步。
+已经用 `.env` 配好的可以直接跳过向导。两种配置来源的优先级、向导入口和全部变量见下方 [配置](#配置)。
 
 ## 两种模式
 
@@ -85,19 +73,20 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 |---|---|---|
 | LLM | DeepSeek 官方 API | 任意 Anthropic 兼容模型（完全自定义） |
 | 需要 | 一个 DeepSeek API Key | Base URL + API Key + 模型名 |
-| 联网搜索 | DeepSeek 服务端工具 | 你配置的搜索 provider |
-| 语音输入 | DeepSeek `/v1/tools/asr` | 你配置的 ASR provider |
-| 朗读 | DeepSeek `/v1/tools/tts` | 你配置的 TTS provider（DeepSeek 或 OpenAI 兼容 `/v1/audio/speech`） |
 | 历史 | 本机 SQLite | 本机 SQLite |
+
+各项能力的来源差异见下方 [能力对照](#能力对照)。
+
+> 云端模式也需要本机后端在跑：会话和附件存在本机 SQLite，不走 DeepSeek 账号云同步。
 
 ## 配置
 
 配置有两个来源，优先级从高到低：
 
-1. 环境变量 / 项目根目录的 `.env`（适合高级用户）
-2. 首次运行向导写入的 `data/config.json`（适合普通用户）
+1. 环境变量 / 项目根目录的 `.env`（适合高级用户，可以完全不经过向导；改完需重启服务）
+2. 首次运行向导写入的 `data/config.json`（适合普通用户；保存后立即生效）
 
-不会读取其他项目的文件。
+向导只在检测到模型未配置时出现；之后想改，入口在 设置 → 通用设置 → 服务配置。不会读取其他项目的文件。
 
 | 变量 | 说明 |
 |---|---|

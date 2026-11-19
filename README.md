@@ -61,23 +61,11 @@ Windows x64 users can download the portable ZIP from [Releases](https://github.c
 
 > **The prebuilt portable ZIP is not guaranteed to be the latest version.** It is packaged at release time and normally lags behind `main`; for the newest features run from source or build it yourself with `build.bat`.
 
-### Configuration: two sources, environment variables first
+### First run
 
-Two sources, in descending priority:
+If nothing is configured yet, the first visit shows a setup wizard: **DeepSeek Cloud** just needs an API key; **self-hosted backend** needs a base URL, API key and model name, with search, ASR, OCR and read-aloud under Advanced. Changes take effect immediately.
 
-1. **Environment variables / `.env` in the project root** — meant for advanced users; you can skip the wizard entirely.
-2. **`data/config.json` written by the first-run wizard** — meant for regular users.
-
-Once a model is configured through `.env`, the wizard no longer pops up (it only appears when no model is configured). Restart the server after editing `.env`.
-
-If nothing is configured yet, the first visit shows the wizard:
-
-- **DeepSeek Cloud:** switch to cloud mode, then enter your DeepSeek API key in Settings.
-- **Self-hosted backend:** enter the base URL, API key, and model name; configure search, ASR, OCR and read-aloud under Advanced (choosing SearXNG reveals the rerank group).
-
-Wizard settings go to `data/config.json` and take effect immediately, with no restart. To reopen the wizard later: Settings → General → Service configuration.
-
-> Cloud mode still needs the local backend running, because conversations and attachments live in local SQLite rather than DeepSeek cloud sync.
+If you already configured everything through `.env`, skip the wizard. The precedence of the two sources, the wizard entry point and every variable are documented under [Configuration](#configuration).
 
 ## Two modes
 
@@ -85,19 +73,20 @@ Wizard settings go to `data/config.json` and take effect immediately, with no re
 |---|---|---|
 | LLM | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
 | Requires | A DeepSeek API key | Base URL + API key + model name |
-| Web search | DeepSeek server-side tools | Your configured search provider |
-| Voice input | DeepSeek `/v1/tools/asr` | Your configured ASR provider |
-| Read-aloud | DeepSeek `/v1/tools/tts` | Your configured TTS provider (DeepSeek or OpenAI-compatible `/v1/audio/speech`) |
 | History | Local SQLite | Local SQLite |
+
+Where each capability comes from is listed in the [capability matrix](#capability-matrix).
+
+> Cloud mode still needs the local backend running: conversations and attachments live in local SQLite, not in DeepSeek cloud sync.
 
 ## Configuration
 
 Configuration has two sources, in descending priority:
 
-1. Environment variables / `.env` in the project root (suitable for advanced users)
-2. `data/config.json` written by the first-run wizard (suitable for regular users)
+1. Environment variables / `.env` in the project root (suitable for advanced users; you can skip the wizard entirely — restart after editing)
+2. `data/config.json` written by the first-run wizard (suitable for regular users; takes effect immediately)
 
-Nothing is read from other projects.
+The wizard only appears when no model is configured; to reopen it later: Settings → General → Service configuration. Nothing is read from other projects.
 
 | Variable | Description |
 |---|---|
