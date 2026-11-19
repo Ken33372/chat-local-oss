@@ -1,26 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** 两次更新的最长间隔 */
-const MAX_WAIT = 2000
-/** 上次渲染耗时的倍数，过了这段时间才允许下次更新 */
-const TIME_CONSUMING_RATE = 2
+/** 每次渲染后的最小间隔；新内容在这段时间内合并为最新文本 */
+const MIN_INTERVAL = 120
 
 /**
- * 流式过程中按渲染耗时节流 Markdown 内容的更新：
- * 更新输出时记录开始时间，提交后按耗时 × TIME_CONSUMING_RATE（不超过 MAX_WAIT）
- * 算出下次允许更新的时间点；新内容在到期时更新，连续输入合并为最新内容。
- * 关闭节流时直接返回最新内容。
+ * 流式过程中节流 Markdown 内容的更新：
+ * 一次渲染提交后至少间隔 MIN_INTERVAL 才允许下一次更新；
+ * 期间到达的新内容合并为最新文本一次提交。关闭节流时直接返回最新内容。
  */
 export const useThrottleMarkdownRender = (content: string, enable: boolean) => {
-  // 首次渲染从挂载时开始计时
-  const startRef = useRef(performance.now())
   const updatableAtRef = useRef(0)
   const [output, setOutput] = useState(content)
 
   useEffect(() => {
-    const now = performance.now()
-    updatableAtRef.current =
-      now + Math.min(MAX_WAIT, (now - startRef.current) * TIME_CONSUMING_RATE)
+    updatableAtRef.current = performance.now() + MIN_INTERVAL
   }, [output])
 
   useEffect(() => {
@@ -28,7 +21,6 @@ export const useThrottleMarkdownRender = (content: string, enable: boolean) => {
       return
     }
     const update = () => {
-      startRef.current = performance.now()
       setOutput(content)
     }
     const delay = updatableAtRef.current - performance.now()
