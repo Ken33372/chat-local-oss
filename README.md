@@ -12,7 +12,7 @@ Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Rec
 
 ## Project status
 
-This is a **community snapshot (v0.1.1)**, not a continuously maintained product.
+This is a **community snapshot (v0.1.2)**, not a continuously maintained product.
 
 - The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted path has been smoke-tested.
 - **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
