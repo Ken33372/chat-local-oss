@@ -75,7 +75,9 @@ TTS_RESPONSE_FORMAT=wav
 
 每一项都可以单独删掉：删了对应功能就从界面消失，其他能力不受影响。SearXNG 的那一串调优变量（候选数、翻页数、摘要长度）走默认值即可，细节见 [search.zh-CN.md](search.zh-CN.md)。
 
-### 示例 3：一把 DeepSeek key 打通
+### 示例 3：一把 DeepSeek key 打通（仅 `.env`）
+
+这个快捷方式**只能写在 `.env` 或系统环境变量里**，首次运行向导没有「DeepSeek key」这一项；用向导配置的人需要在 LLM / 语音 / OCR 三处分别选 `deepseek` 并各填一次 key（或者干脆改用 `.env`）。
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx

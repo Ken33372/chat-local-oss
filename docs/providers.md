@@ -75,7 +75,9 @@ TTS_RESPONSE_FORMAT=wav
 
 Every block can be deleted on its own: the corresponding feature disappears from the UI and nothing else is affected. The SearXNG tuning variables (candidate counts, pages, snippet length) work with their defaults; details in [search.md](search.md).
 
-### Example 3: one DeepSeek key
+### Example 3: one DeepSeek key (`.env` only)
+
+This shortcut works **only from `.env` or system environment variables**; the first-run wizard has no "DeepSeek key" field. Wizard users must pick `deepseek` in the LLM, voice and OCR blocks and paste the key three times — or just use `.env`.
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx

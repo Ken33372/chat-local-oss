@@ -74,7 +74,7 @@ Nothing is read from other projects.
 
 | Variable | Description |
 |---|---|
-| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`) |
+| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Anthropic-compatible endpoint for the self-hosted backend |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
