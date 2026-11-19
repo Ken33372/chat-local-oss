@@ -11,7 +11,7 @@ Everything can go into the project's `.env`, or be written to `data/config.json`
 | Capability | Required | Optional (has a default) |
 |---|---|---|
 | Chat | `LLM_BASE_URL`, `LLM_MODEL` | `LLM_API_KEY` (local servers may not need one), `LLM_CONTEXT_LIMIT`, `LLM_MAX_OUTPUT_TOKENS` |
-| Search | `SEARCH_PROVIDER`; `SEARCH_BASE_URL` when using `searxng` | Base URL for Tavily / AnySearch, `SEARCH_RESULTS` |
+| Search | `SEARCH_PROVIDER`; `SEARCH_BASE_URL` when using `searxng` | Base URL for Tavily / AnySearch, `SEARCH_RESULTS` (1–12, default 6) |
 | Rerank | `RERANK_PROVIDER` **and** `RERANK_BASE_URL` — both | `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT` |
 | Voice input | `ASR_PROVIDER`, `ASR_BASE_URL` | `ASR_MODEL` (default `whisper-1`), `ASR_API_KEY` |
 | OCR | `OCR_PROVIDER`, `OCR_BASE_URL` | `OCR_MODEL` (default `gpt-4o-mini`), `OCR_API_KEY` |

@@ -11,7 +11,7 @@ README 只放"用不用、怎么跑起来"；这份文档放两类细节：可�
 | 能力 | 必填 | 可省（有默认） |
 |---|---|---|
 | 对话 | `LLM_BASE_URL`、`LLM_MODEL` | `LLM_API_KEY`（本机服务可空）、`LLM_CONTEXT_LIMIT`、`LLM_MAX_OUTPUT_TOKENS` |
-| 搜索 | `SEARCH_PROVIDER`；选 `searxng` 时还要 `SEARCH_BASE_URL` | Tavily / AnySearch 的 Base URL、`SEARCH_RESULTS` |
+| 搜索 | `SEARCH_PROVIDER`；选 `searxng` 时还要 `SEARCH_BASE_URL` | Tavily / AnySearch 的 Base URL、`SEARCH_RESULTS`（1–12，默认 6） |
 | 重排 | `RERANK_PROVIDER` 与 `RERANK_BASE_URL`，**两个都要** | `RERANK_MODEL`、`RERANK_API_KEY`、`RERANK_TIMEOUT` |
 | 语音输入 | `ASR_PROVIDER` 与 `ASR_BASE_URL` | `ASR_MODEL`（默认 `whisper-1`）、`ASR_API_KEY` |
 | OCR | `OCR_PROVIDER` 与 `OCR_BASE_URL` | `OCR_MODEL`（默认 `gpt-4o-mini`）、`OCR_API_KEY` |

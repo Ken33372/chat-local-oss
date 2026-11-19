@@ -476,6 +476,19 @@ export const SetupWizard = () => {
                     onChange={(event) => update('searchKey', event.target.value)}
                   />
                 </label>
+                <label className={styles.field}>
+                  <span className={styles.label}>{t('setupResults')}</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={form.searchResults}
+                    disabled={disabled}
+                    onChange={(event) => update('searchResults', event.target.value)}
+                  />
+                  <span className={styles.hint}>{t('setupResultsDesc')}</span>
+                </label>
               </>
             ) : null}
             {form.searchProvider === 'searxng' ? (

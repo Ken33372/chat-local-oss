@@ -146,6 +146,7 @@ export const en = {
   setupTtsFormat: 'Audio format',
   setupProviderNone: 'Off',
   setupResults: 'Results per search',
+  setupResultsDesc: 'Items handed to the model (1–12); the AnySearch backend itself returns at most 10.',
   setupSave: 'Save and start',
   setupLater: 'Later',
   setupSaveFailed: 'Save failed: {message}',

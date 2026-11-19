@@ -309,7 +309,7 @@ def search(
 ) -> list[dict]:
     if not _available():
         raise ProviderError("搜索未配置（SEARCH_PROVIDER）")
-    limit = max(1, min(10, max_results or config.SEARCH_RESULTS))
+    limit = max(1, min(12, max_results or config.SEARCH_RESULTS))
     allow, block = _rules(allowed_domains, blocked_domains)
     provider = _provider()
     if provider == "tavily":

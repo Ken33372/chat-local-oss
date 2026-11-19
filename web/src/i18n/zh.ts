@@ -139,6 +139,7 @@ export const zh = {
   setupTtsFormat: '返回格式',
   setupProviderNone: '关闭',
   setupResults: '搜索结果条数',
+  setupResultsDesc: '交给模型的条数（1–12）；anysearch 后端本身最多返回 10 条。',
   setupSave: '保存并开始',
   setupLater: '稍后设置',
   setupSaveFailed: '保存失败：{message}',

@@ -78,7 +78,7 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
         if name == "search":
             results = block.get("results", 6)
             try:
-                item["results"] = max(1, min(10, int(results)))
+                item["results"] = max(1, min(12, int(results)))
             except (TypeError, ValueError):
                 item["results"] = 6
         else:

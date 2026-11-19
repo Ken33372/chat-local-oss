@@ -86,7 +86,7 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 | `TTS_MAX_CHARS` | 单次朗读请求的字数上限，默认 4000；超过就按句子切段逐段合成 |
 | `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` | `template` 专用：完整地址、请求体 JSON 模板、音频取法（`body` / `base64:字段路径` / `url:字段路径`）、额外请求头 |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
-| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流） |
+| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流）。`SEARCH_RESULTS` 取值 1–12，默认 6，可在向导里改 |
 | `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | 可选的重排接口，例如 `llama-server --reranking` 或 HuggingFace text-embeddings-inference。填根地址或以 `/v1` 结尾的地址自动接 `/v1/rerank`，填完整地址（TEI 的 `/rerank`）原样请求；响应认 `{"results":[...]}` 和顶层数组 `[{index,score}]` 两种形状。**只在 `SEARCH_PROVIDER=searxng` 这一路起作用**，细节见 [docs/search.zh-CN.md](docs/search.zh-CN.md) |
 | `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG 翻页聚合的调优项，默认 20 / 60 / 5 / 500 |
 | `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | 站点规则，逗号分隔。写 `example.com` 连子域一起算，写 `example.com/docs` 再限定路径前缀 |
