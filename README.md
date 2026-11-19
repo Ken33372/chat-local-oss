@@ -1,195 +1,195 @@
-<p align="right"><b>English</b> | <a href="README.zh-CN.md">简体中文</a></p>
+<p align="right"><b>简体中文</b> | <a href="README.en.md">English</a></p>
 
 # chat-local
 
-> **Positioning: faithfully recreate the core DeepSeek web chat experience while keeping conversations and attachments on your machine; bring that chat experience to more models through an Anthropic-compatible API.**
+> **定位：深度还原 DeepSeek 网页端的核心聊天体验，同时把会话和附件留在本机；通过 Anthropic 兼容接口，让更多模型也能使用这套聊天体验。**
 
-Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Recreate" here covers the core chat loop: chat, thinking, web and deep search, citations, attachments, and voice. It does not include DeepSeek accounts, cloud conversation sync, or every operational feature of the website.
+基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造。这里的「还原」指对话、思考、联网/深搜、引用、附件和语音等核心聊天链路，不包含 DeepSeek 账号体系、云端会话同步或官网的全部运营功能。
 
-**Who it is for:** people who want DeepSeek-web-style chat, local history, and the ability to plug in their own model backend.
+**适合：** 想要 DeepSeek 网页式聊天、历史留在本机、并且能接自己模型的人。
 
-**Who it is not for:** people who need agents, plugins, RAG knowledge bases, multi-user support, or mobile apps; use a platform built for those. This project intentionally stays a pure chat tool.
+**不适合：** 需要 Agent、插件、RAG 知识库、多用户或移动端的人；这些请选专门平台。本项目刻意保持纯聊天。
 
-## Project status
+## 项目状态
 
-This is a **community snapshot (v0.1.2)**, not a continuously maintained product.
+这是一个**社区快照（v0.1.2）**，不是持续维护的产品。
 
-- The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted path has been smoke-tested.
-- **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
-- Issues and PRs are best-effort. Back up `data/` before upgrading; do not treat it as your only copy.
-- When reporting a problem, include your OS, model provider, reproduction steps, and relevant logs.
+- 界面、消息协议和 DeepSeek 云端路径继承自 [chat-demo](https://github.com/deepseek-ai/chat-demo)，核心功能保留；自建后端路径做过冒烟测试。
+- **未经过广泛测试**：DeepSeek 云端、ASR、OCR、TTS、不同模型服务和不同操作系统上的表现，主要交给社区验证。
+- Issue 和 PR 随缘处理；使用前请自行备份 `data/`，不要把它当作唯一数据副本。
+- 遇到问题请附上系统、模型 provider、复现步骤和相关日志，便于判断。
 
-## Relationship to chat-demo
+## 与 chat-demo 的关系
 
-**In DeepSeek Cloud mode, the cloud chat features match [chat-demo](https://github.com/deepseek-ai/chat-demo):** chat, thinking, web/deep search, link reading, attachment upload, voice input, and read-aloud use the same official DeepSeek endpoints and interaction model. The cloud request path has not been rewritten.
+**使用 DeepSeek 云端时，本项目的云端对话功能与 [chat-demo](https://github.com/deepseek-ai/chat-demo) 保持一致**：对话、思考、联网/深度搜索、读链接、附件上传、语音输入和朗读沿用同一套 DeepSeek 官方接口与交互，云端请求链没有改写。
 
-The main differences are local SQLite storage and the features listed below. Anything marked "self-hosted only" is unavailable in cloud mode.
+与原版相比，主要差异是会话改为本机 SQLite 存储，并新增了下方「功能」一节；这些功能里标注「仅自建后端」的只在自建模式生效。
 
-## Quick start
+## 快速开始
 
-### Option 1: run from source
+### 方式一：从源码运行
 
-1. **Requirements**: Python 3.10+ and Node.js 20+ (`python --version` and `node --version` should print versions).
-2. **Get the source**:
+1. **准备环境**：Python 3.10+、Node.js 20+（`python --version`、`node --version` 能显示版本即可）。
+2. **拿到源码**：
 
    ```bash
    git clone https://github.com/Ken33372/chat-local-oss.git
    cd chat-local-oss
    ```
 
-   No git? Download the repository ZIP and unzip it — same result.
-3. **Install backend dependencies and build the frontend** (from the project root):
+   没有 git 就下载仓库 ZIP 解压，效果一样。
+3. **装后端依赖并构建前端**（都在项目根目录执行）：
 
    ```bash
    pip install -r requirements.txt
    cd web && npm install && npm run build && cd ..
    ```
 
-   To isolate Python packages, run `python -m venv .venv`, activate it, then `pip install`.
-4. **Start the backend**:
+   想隔离 Python 依赖，可以先 `python -m venv .venv`，激活后再执行 `pip install`。
+4. **启动后端**：
 
    ```bash
    python -m uvicorn main:app --app-dir server --host 127.0.0.1 --port 17865
    ```
-5. **Verify**: open `http://127.0.0.1:17865/`; `http://127.0.0.1:17865/api/health` returning JSON means the server is up.
+5. **打开验证**：浏览器访问 `http://127.0.0.1:17865/`；`http://127.0.0.1:17865/api/health` 能返回 JSON 说明服务正常。
 
-On Windows, the frontend half of step 3 and step 4 can be replaced by the provided scripts: run `pip install -r requirements.txt` once yourself, then double-click `build.bat` (installs frontend dependencies and builds), then `start.bat` (starts the server and opens the browser); `stop.bat` stops it.
+Windows 上第 3 步的前端部分和第 4 步也可以换成现成脚本：`pip install -r requirements.txt` 仍要手动执行一次，然后双击 `build.bat`（装前端依赖 + 构建），再双击 `start.bat`（启动并自动打开浏览器），`stop.bat` 停止。
 
-### Option 2: portable ZIP (no environment needed)
+### 方式二：便携包（不用装环境）
 
-Windows x64 users can download the portable ZIP from [Releases](https://github.com/Ken33372/chat-local-oss/releases), unzip it, and run `start.bat` — no Python or Node installation is required.
+Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local-oss/releases) 里的便携包，解压后双击 `start.bat`，无需安装 Python 或 Node。
 
-> **The prebuilt portable ZIP is not guaranteed to be the latest version.** It is packaged at release time and normally lags behind `main`; for the newest features run from source or build it yourself with `build.bat`.
+> 预构建便携包**不保证是最新版**：它按发版时点打包，落后于 `main` 是常态。想要最新功能，请从源码运行，或自行跑 `build.bat`。
 
-### First run
+### 第一次打开
 
-If nothing is configured yet, the first visit shows a setup wizard: **DeepSeek Cloud** just needs an API key; **self-hosted backend** needs a base URL, API key and model name, with search, ASR, OCR and read-aloud under Advanced. Changes take effect immediately.
+还没配置时，首次打开会出现配置向导：**DeepSeek 云端**填 API Key 即可；**自建后端**填 Base URL、API Key、模型名，高级里再配搜索、ASR、OCR、朗读。保存后立即生效。
 
-If you already configured everything through `.env`, skip the wizard. The precedence of the two sources, the wizard entry point and every variable are documented under [Configuration](#configuration).
+已经用 `.env` 配好的可以直接跳过向导。两种配置来源的优先级、向导入口和全部变量见下方 [配置](#配置)。
 
-## Two modes
+## 两种模式
 
-| | DeepSeek Cloud | Self-hosted backend |
+| | DeepSeek 云端 | 自建后端 |
 |---|---|---|
-| LLM | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
-| Requires | A DeepSeek API key | Base URL + API key + model name |
-| History | Local SQLite | Local SQLite |
+| LLM | DeepSeek 官方 API | 任意 Anthropic 兼容模型（完全自定义） |
+| 需要 | 一个 DeepSeek API Key | Base URL + API Key + 模型名 |
+| 历史 | 本机 SQLite | 本机 SQLite |
 
-Where each capability comes from is listed in the [capability matrix](#capability-matrix).
+各项能力的来源差异见下方 [能力对照](#能力对照)。
 
-> Cloud mode still needs the local backend running: conversations and attachments live in local SQLite, not in DeepSeek cloud sync.
+> 云端模式也需要本机后端在跑：会话和附件存在本机 SQLite，不走 DeepSeek 账号云同步。
 
-## Configuration
+## 配置
 
-Configuration has two sources, in descending priority:
+配置有两个来源，优先级从高到低：
 
-1. Environment variables / `.env` in the project root (suitable for advanced users; you can skip the wizard entirely — restart after editing)
-2. `data/config.json` written by the first-run wizard (suitable for regular users; takes effect immediately)
+1. 环境变量 / 项目根目录的 `.env`（适合高级用户，可以完全不经过向导；改完需重启服务）
+2. 首次运行向导写入的 `data/config.json`（适合普通用户；保存后立即生效）
 
-The wizard only appears when no model is configured; to reopen it later: Settings → General → Service configuration. Nothing is read from other projects.
+向导只在检测到模型未配置时出现；之后想改，入口在 设置 → 通用设置 → 服务配置。不会读取其他项目的文件。
 
-| Variable | Description |
+| 变量 | 说明 |
 |---|---|
-| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Anthropic-compatible endpoint for the self-hosted backend |
-| `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
+| `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR、OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的 Anthropic 兼容接口 |
+| `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | Speech recognition; the OpenAI-compatible default model is `whisper-1`. A root URL, or any URL ending in `/v1` (including prefixed ones such as `/api/v1`), gets `/v1/audio/transcriptions` appended; a full URL is used as-is; responses may be `{text}`, `[{text}]`, `{segments:[{text}]}` or plain text |
+| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址或以 `/v1` 结尾的地址（含 `/api/v1` 前缀）自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
 | `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only. A root URL gets `/v1/chat/completions` appended, a full URL is used as-is |
-| `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`; no read-aloud button unless it is set |
-| `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` | Read-aloud endpoint. With `deepseek` the base URL can be omitted and `DEEPSEEK_API_KEY` is reused; `openai` means the OpenAI-compatible `/v1/audio/speech`, so self-hosted engines point at their own address (default model name `tts-1`). A base URL that already carries a path — for example `http://host:8090/api/tts/speech` — is requested as-is instead of having the standard path appended |
-| `TTS_VOICE` | Voice name; leave empty for the service default (DeepSeek: `stella`; OpenAI: `alloy`) |
-| `TTS_RESPONSE_FORMAT` | `wav` (default) / `mp3` / `opus` / `pcm`; only applies to the OpenAI-compatible path |
-| `TTS_MAX_CHARS` | Character budget per synthesis request (4000 by default); longer replies are split at sentence boundaries and synthesized segment by segment |
-| `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` | `template` only: exact endpoint URL, JSON body template, how to extract audio (`body` / `base64:<field>` / `url:<field>`), extra request headers |
+| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片。根地址自动接 `/v1/chat/completions`，填完整地址原样请求 |
+| `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`；不配就没有朗读按钮 |
+| `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` | 朗读接口。`deepseek` 可省略地址、复用 `DEEPSEEK_API_KEY`；`openai` 是 OpenAI 兼容的 `/v1/audio/speech`，自建引擎填服务根地址（默认模型名 `tts-1`）。地址里已经带路径（例如 `http://host:8090/api/tts/speech`）就原样请求，不再追加标准路径 |
+| `TTS_VOICE` | 音色名，留空用服务默认（DeepSeek：`stella`；OpenAI：`alloy`） |
+| `TTS_RESPONSE_FORMAT` | `wav`（默认）/ `mp3` / `opus` / `pcm`，仅 OpenAI 兼容这一路生效 |
+| `TTS_MAX_CHARS` | 单次朗读请求的字数上限，默认 4000；超过就按句子切段逐段合成 |
+| `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` | `template` 专用：完整地址、请求体 JSON 模板、音频取法（`body` / `base64:字段路径` / `url:字段路径`）、额外请求头 |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
-| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | Web search. `SEARCH_BASE_URL` is optional for Tavily (`https://api.tavily.com`) and AnySearch (`https://api.anysearch.com`), but required for SearXNG. Tavily requires a key; AnySearch keys may be empty (anonymous rate limits). `SEARCH_RESULTS` ranges from 1 to 12 (default 6) and is editable in the wizard |
-| `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | Optional rerank endpoint — for example `llama-server --reranking` or HuggingFace text-embeddings-inference. A root URL or any URL ending in `/v1` gets `/v1/rerank` appended, a full URL (TEI's `/rerank`) is used as-is; both `{"results":[...]}` and a top-level `[{index,score}]` array are accepted. Only takes effect with `SEARCH_PROVIDER=searxng`; details in [docs/search.md](docs/search.md) |
-| `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG aggregation tuning (20 / 60 / 5 / 500 by default) |
-| `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | Comma-separated site rules. `example.com` also covers its subdomains; `example.com/docs` additionally restricts the path prefix |
-| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`. Defaults to `vision`, which sends images to the model and **requires vision/multimodal support**; `auto` falls back to OCR when the model rejects the image; `ocr` never sends images and uses OCR only. **If your model is not multimodal, set this to `auto` or `ocr`; otherwise sending an image returns an upstream error.** |
+| `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流）。`SEARCH_RESULTS` 取值 1–12，默认 6，可在向导里改 |
+| `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | 可选的重排接口，例如 `llama-server --reranking` 或 HuggingFace text-embeddings-inference。填根地址或以 `/v1` 结尾的地址自动接 `/v1/rerank`，填完整地址（TEI 的 `/rerank`）原样请求；响应认 `{"results":[...]}` 和顶层数组 `[{index,score}]` 两种形状。**只在 `SEARCH_PROVIDER=searxng` 这一路起作用**，细节见 [docs/search.zh-CN.md](docs/search.zh-CN.md) |
+| `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG 翻页聚合的调优项，默认 20 / 60 / 5 / 500 |
+| `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | 站点规则，逗号分隔。写 `example.com` 连子域一起算，写 `example.com/docs` 再限定路径前缀 |
+| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`。默认 `vision`，直接把图片发给模型，**要求模型支持视觉/多模态**；`auto` 先发图，被拒时自动回退 OCR；`ocr` 只做 OCR、不发图。**模型不支持多模态时请设为 `auto` 或 `ocr`，否则发图会收到上游报错。** |
 
-Unconfigured capabilities are hidden in the UI (for example, no ASR means no microphone button), so users do not hit buttons that are guaranteed to fail.
+没配置的能力会从界面上隐藏（例如没有 ASR 就不显示麦克风），不会出现点了必然报错的按钮。
 
-### More detail
+### 更多细节
 
-- Two copy-paste configuration examples, plus interface compatibility notes for read-aloud / ASR / OCR / rerank: [docs/providers.md](docs/providers.md)
-- SearXNG result quality, the rerank switch, paging aggregation and measured timings: [docs/search.md](docs/search.md)
+- 两个可直接照抄的配置示例、朗读/ASR/OCR/重排的接口兼容说明：[docs/providers.zh-CN.md](docs/providers.zh-CN.md)
+- SearXNG 的结果质量、重排开关、翻页聚合与实测耗时：[docs/search.zh-CN.md](docs/search.zh-CN.md)
 
-## Features
+## 功能
 
-### Per-capability self-hosted configuration
+### 自建后端逐项自定义
 
-LLM, search, ASR, and OCR are configured independently:
+LLM、搜索、ASR、OCR 分别配置，互不绑定：
 
-- **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint).
-- **ASR:** DeepSeek `/v1/tools/asr` or an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
-- **OCR:** DeepSeek `/v1/tools/ocr` (documents and images) or an OpenAI-compatible vision endpoint (images only).
-- **Search:** Tavily, AnySearch, SearXNG, or off. With SearXNG you can add your own reranker to enable multi-page aggregation and relevance ordering; without one, search stays single-page.
-- Unconfigured capabilities are hidden automatically. OpenAI-compatible LLMs are not supported yet.
+- **LLM**：模型名、Base URL、API Key、上下文上限和单次最大输出都由你填写；使用 Anthropic 兼容协议（例如 DeepSeek 的 `/anthropic` 端点）。
+- **ASR**：可选 DeepSeek `/v1/tools/asr` 或 OpenAI 兼容 `/v1/audio/transcriptions`。
+- **OCR**：可选 DeepSeek `/v1/tools/ocr`（文档与图片）或 OpenAI 兼容视觉接口（仅图片）。
+- **搜索**：可选 Tavily、AnySearch、SearXNG，或直接关闭。SearXNG 可以再挂自己的重排模型，开启多页聚合与相关性排序；不配就只取一页。
+- 未配置的能力会自动隐藏；OpenAI 兼容的 LLM 尚未接入。
 
-### Conversations and data
+### 会话与数据
 
-- **Local storage:** FastAPI + SQLite store chats and attachments in `data/chat.db` and `data/files/`.
-- **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import.
-- **Chat search:** search message text from the sidebar; results are grouped by chat with matching snippets. Archived chats are excluded.
-- **Archive and restore:** archive from the session menu; open, restore, or permanently delete archived chats under Settings → Data management → View archive.
-- **Chat cleanup:** delete chats older than N years/months or inside a date range; remove tool-call records and image originals from all chats.
+- **本机存储**：FastAPI + SQLite 保存会话和附件（`data/chat.db`、`data/files/`）。
+- **历史导入导出**：支持 DeepSeek 官方 ZIP（`export_format_version: 3`）；覆盖、合并跳过重复、冲突另存副本三种方式，导入时可选择丢弃工具调用记录或图片原件。
+- **对话搜索**：侧栏搜索消息正文，结果按会话分组并显示匹配片段；归档会话不参与搜索。
+- **归档与恢复**：会话菜单 → 归档；设置 → 数据管理 → 查看归档，可打开、恢复或永久删除。
+- **对话清理**：按 N 年前/月前或日期区间删除；也可移除所有会话里的工具调用记录和图片原件。
 
-### Context and tools (self-hosted only)
+### 上下文与工具（仅自建后端）
 
-- **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
-- **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
-- **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
+- **上下文管理**：用量提示、本地压缩，以及可配置的上下文上限和单次最大输出。云端模式只有用量提示，上限由 DeepSeek 固定。
+- **自动生成标题**：可选，默认关闭。首轮回复完成后，本地后端用第一条用户消息和助手正文额外请求一次模型生成标题；云端继续使用 DeepSeek 自带标题。
+- **工具轮数**：界面可调一次回答里的最大联网工具轮数。云端由 DeepSeek 服务端决定，前端不发送该参数。
 
-### UI and configuration
+### 界面与配置
 
-- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Choosing SearXNG as the search provider reveals a rerank group (Base URL / API Key / Model); filling in the Base URL is what turns on multi-page aggregation. Under Advanced you can also configure read-aloud: provider, base URL, key, model, voice and response format.
-- **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
-- **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
+- **首次运行向导**：两种模式都能进入，但只负责写自建后端的配置。搜索选 SearXNG 时会多出一组重排输入框（Base URL / API Key / 模型名），填了 Base URL 就算开启多页聚合；高级里还能单独配朗读的 provider、地址、key、模型、音色与返回格式。
+- **能力探测**：没配置的搜索、ASR 等入口自动隐藏。
+- **界面修复**：深色模式下拉框、会话菜单定位、清理统计等问题。
 
-## Capability matrix
+## 能力对照
 
-| Capability | DeepSeek Cloud | Self-hosted backend |
+| 能力 | DeepSeek 云端 | 自建后端 |
 |---|---|---|
-| Chat / thinking / stop / continue | DeepSeek API | Anthropic-compatible endpoint |
-| Web search and page reading | DeepSeek server-side tools; the tools themselves are not billed | Your configured search provider |
-| Voice input | DeepSeek `/v1/tools/asr` | `deepseek` or OpenAI-compatible ASR |
-| Read-aloud | DeepSeek `/v1/tools/tts` | `deepseek` or OpenAI-compatible `/v1/audio/speech` |
-| Images | Sent directly to DeepSeek | Vision first; optional OCR fallback |
-| PDF / Word / PPT | DeepSeek Files API | DeepSeek OCR or disabled |
+| 对话/思考/停止/续写 | DeepSeek API | Anthropic 兼容接口 |
+| 联网搜索、读网页 | DeepSeek 服务端工具，工具本身不计费 | 你配置的搜索 provider |
+| 语音输入 | DeepSeek `/v1/tools/asr` | `deepseek` 或 OpenAI 兼容 ASR |
+| 朗读 | DeepSeek `/v1/tools/tts` | `deepseek` 或 OpenAI 兼容 `/v1/audio/speech` |
+| 图片 | 直传 DeepSeek | 直接发视觉；失败可回退 OCR |
+| PDF/Word/PPT | DeepSeek Files API | DeepSeek OCR 或关闭 |
 
-Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `engine` / `template`) covering common self-hosted TTS servers; the shape table, the four `template` settings and what is explicitly out of scope (e.g. ComfyUI async workflows) are in [docs/providers.md](docs/providers.md#the-four-read-aloud-request-shapes).
+自建朗读支持四种接口形状（`openai` / `deepseek` / `engine` / `template`），覆盖常见自建 TTS 服务；四种形状的对照表、`template` 的四项配置和明确不支持的服务类型（如 ComfyUI 异步工作流）见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#朗读的四种接口形状)。
 
-## Limitations
+## 限制
 
-- This project has not been broadly tested; see Project status above.
-- The self-hosted LLM currently supports only the Anthropic-compatible protocol (DeepSeek's `/anthropic` endpoint and other compatible services). OpenAI-compatible LLMs are not supported yet.
-- OpenAI-compatible OCR handles images only; use DeepSeek OCR for PDF/Word/PPT or convert them to images first.
-- Import/export currently supports only the DeepSeek export format.
-- Read-aloud has not been verified by listening on either path; whether self-hosted read-aloud works depends on your service actually implementing `/v1/audio/speech`.
-- The two known SearXNG pitfalls (Brave jump links, upstream engine rate limits) are documented in [docs/search.md](docs/search.md#two-known-sources-of-dirty-data).
+- 本项目未经过广泛测试，详见上面的「项目状态」。
+- 自建后端的 LLM 目前只支持 Anthropic 兼容协议（DeepSeek 的 `/anthropic` 端点、其他兼容服务）。OpenAI 兼容的 LLM 尚未接入。
+- OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 请用 DeepSeek OCR 或先转图片。
+- 导入/导出目前只支持 DeepSeek 导出格式。
+- 朗读（云端与自建）都未做真机试听验证，属于「未经过广泛测试」的范围；自建朗读能不能出声，取决于你接的服务是否实现了 `/v1/audio/speech`。
+- SearXNG 的两类已知问题（Brave 跳转链、上游引擎限流）见 [docs/search.zh-CN.md](docs/search.zh-CN.md#已知的两类脏数据)。
 
-## Security and privacy
+## 安全与隐私
 
-- The server listens on `127.0.0.1` by default; write endpoints require the `X-Chat-Local: 1` header.
-- Chats and attachments live in local `data/`, independent of a DeepSeek account or cloud conversation sync. Cloud mode still sends conversation content to the DeepSeek API; only self-hosted mode keeps inference on the model endpoint you configure.
-- When web search, ASR, or OCR is enabled, the corresponding content is sent to the provider you chose. Disable anything you do not need.
-- Self-hosted secrets live only in `.env` or `data/config.json` and are never returned in plaintext. Both locations are excluded by `.gitignore`.
-- The setup write endpoints accept only loopback requests. If the server listens on `0.0.0.0`, the wizard is read-only and you must use `.env`.
-- In cloud mode the API key is stored in browser localStorage, as in the original chat-demo.
+- 服务默认只监听 `127.0.0.1`，写接口要求 `X-Chat-Local: 1` 请求头。
+- 会话和附件保存在本机 `data/`，不依赖 DeepSeek 账号或云端会话同步；但云端模式仍会把对话内容发送给 DeepSeek API，自建模式才会把推理留在你配置的模型端。
+- 开启联网搜索、ASR、OCR 时，对应内容会发送给你选择的 provider；不需要的能力可以直接关闭。
+- 自建后端的密钥只放在 `.env` 或 `data/config.json`，保存后不会回传明文；两个位置都已被 `.gitignore` 排除。
+- 配置向导的写接口只接受本机请求；如果服务监听在 `0.0.0.0`，向导不可写，只能用 `.env`。
+- 云端模式的 API Key 存在浏览器 localStorage，和原版 chat-demo 一致。
 
-## AI-assisted development disclosure
+## AI 辅助开发声明
 
-Substantial parts of the code, documentation, and refactoring were generated or modified with **DeepSeek in Qoder**, then reviewed, run, and accepted or rejected by a human. AI-generated code may contain bugs, omissions, or security issues; evaluate it before use. This project is not affiliated with DeepSeek.
+本项目的代码、文档和重构大量使用了 **Qoder 中的 DeepSeek** 辅助生成和修改，并由人工审查、运行和取舍。AI 生成的代码可能存在错误、遗漏或安全问题，请在使用前自行评估；本项目与 DeepSeek 官方无关。
 
-## Acknowledgements
+## 鸣谢
 
-The SearXNG result-quality work — paging aggregation with `pageno` (candidate target and ceiling, stop rules), cross-page de-duplication, snippet cleaning, domain allow/block rules, and reranking the aggregate instead of dumping it into the context — was informed by the search tool of [DdogezD/claudium](https://github.com/DdogezD/claudium), whose default values (20 candidates, 5 pages, 500-character snippets) are reused here.
+SearXNG 的搜索结果质量优化——用 `pageno` 做翻页聚合（候选目标数与上限、停止规则）、跨页去重、摘要清洗、站点黑白名单，以及把聚合来的候选交给重排模型选优而不是全塞进上下文——思路参考了 [DdogezD/claudium](https://github.com/DdogezD/claudium) 的搜索工具，默认值（20 条候选、最多 5 页、摘要 500 字）也沿用它的取值。
 
-That repository declares no license, so nothing was copied from it: the ideas were reimplemented in this project's own code, and claudium is not a dependency here.
+该仓库未声明许可证，因此本项目没有复制它的任何代码：以上功能是按思路重新实现的，claudium 也不是本项目的依赖。
 
-## License
+## 许可
 
-MIT. See [LICENSE](LICENSE). The UI and message protocol come from [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) (MIT).
+MIT，见 [LICENSE](LICENSE)。界面与消息协议来自 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）。
