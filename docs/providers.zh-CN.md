@@ -102,12 +102,14 @@ TTS_PROVIDER=deepseek
 
 | provider | 请求体 | 地址规则 | 典型服务 |
 |---|---|---|---|
-| `openai` | `{model, input, voice, response_format}` | 根地址自动接 `/v1/audio/speech`；带了别的路径就原样用 | llama.cpp、audio.cpp、vLLM、TGI、Kokoro-FastAPI 及多数套壳 fork |
+| `openai` | `{model, input, voice, response_format}` | 根地址或以 `/v1` 结尾的地址（含 `/api/v1` 这类前缀）自动接 `/v1/audio/speech`；带了别的路径就原样用 | llama.cpp、audio.cpp、vLLM、TGI、Kokoro-FastAPI 及多数套壳 fork |
 | `deepseek` | `{text, voice_id, format, filter_markdown}` | 官方 `/v1/tools/tts` | DeepSeek 官方 |
 | `engine` | `{engine, input, voice, response_format}` | 填到接口级，原样请求（音色必填） | 用 `engine` 字段选模型的服务，例如自建模型控制台 |
 | `template` | 你自己写的 JSON 模板，支持 `{text}` `{voice}` `{model}` `{format}` 占位 | 你填完整 URL | 自己用 PyTorch + FastAPI 包一层的任何服务；响应是 base64 字段或音频链接也能取 |
 
 `template` 用 `TTS_TEMPLATE_URL` / `TTS_TEMPLATE_BODY` / `TTS_TEMPLATE_AUDIO` / `TTS_TEMPLATE_HEADERS` 四项配置，只能写在 `.env` 里，`.env.example` 有完整注释。
+
+占位符只替换一次：正文里恰好出现 `{voice}` / `{format}` 这类文字会原样发给服务，不会被二次替换。
 
 **明确不做的**：ComfyUI 这类"提交工作流 → 轮询任务 → 再下载产物"的异步服务。它不是单次请求就返回音频，要支持得单独写轮询适配器，而且每张工作流图都不一样。这类请先用别的网关把音频吐成 HTTP 接口，或提 issue 说明你的工作流。
 
@@ -121,9 +123,9 @@ TTS_PROVIDER=deepseek
 
 | 能力 | 请求形状 | 响应形状 | 地址规则 |
 |---|---|---|---|
-| ASR | 标准 multipart（`file` + `model`），whisper.cpp 与多数 fork 都认 | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / 纯文本 | 根地址自动接 `/v1/audio/transcriptions`，完整地址原样请求 |
-| OCR | DeepSeek 用 `/v1/tools/ocr`（文档与图片）；OpenAI 兼容走视觉 chat/completions（仅图片） | 两种都是取正文文本 | 同上，根地址自动接标准路径 |
-| 重排 | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` 或顶层数组 `[{index,score}]`（TEI 的形状），网关套一层 `data` 也认 | 根地址自动接 `/v1/rerank`，填 TEI 的 `/rerank` 原样请求 |
+| ASR | 标准 multipart（`file` + `model`），whisper.cpp 与多数 fork 都认 | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / 纯文本；长 base64 串会被跳过 | 根地址或以 `/v1` 结尾的地址自动接 `/v1/audio/transcriptions`，完整地址原样请求 |
+| OCR | DeepSeek 用 `/v1/tools/ocr`（文档与图片）；OpenAI 兼容走视觉 chat/completions（仅图片） | 两种都是取正文文本 | 同上，根地址或以 `/v1` 结尾的地址接标准路径 |
+| 重排 | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` 或顶层数组 `[{index,score}]`（TEI 的形状），网关套一层 `data` 也认 | 根地址或以 `/v1` 结尾的地址自动接 `/v1/rerank`，填 TEI 的 `/rerank` 原样请求 |
 
 PaddleOCR、MinerU、Surya 这类"正经 OCR 服务"没有统一协议，本项目目前不接；用 OpenAI 兼容视觉接口或 DeepSeek OCR 代替。
 

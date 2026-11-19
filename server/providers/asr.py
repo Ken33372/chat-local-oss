@@ -12,6 +12,18 @@ from providers.common import ProviderError, api_url, client, detail
 
 DEFAULT_BASE = {"deepseek": "https://api.deepseek.com", "openai": "https://api.openai.com"}
 _ASR_PREFIX = re.compile(r"^\s*language\s+[^<>]*<asr_text>\s*", re.IGNORECASE)
+# 纯 base64 字符集：有些服务把音频塞进 text 字段，不能当识别结果交出去
+_BASE64_LIKE = re.compile(r"^[A-Za-z0-9+/=\r\n]+$")
+
+
+def _looks_like_audio(text: str) -> bool:
+    """长、无空白无标点、全在 base64 字符集里 —— 按音频载荷处理，不当文本。"""
+    return len(text) >= 256 and bool(_BASE64_LIKE.match(text)) and " " not in text
+
+
+def _accept(value: object) -> str:
+    text = value.strip() if isinstance(value, str) else ""
+    return "" if not text or _looks_like_audio(text) else text
 
 
 def _base() -> str:
@@ -29,23 +41,23 @@ def _payload_text(body: object) -> str:
         return "".join(str(item.get("text") or "") for item in items if isinstance(item, dict))
 
     if isinstance(body, str):
-        return body
+        return _accept(body)
     if isinstance(body, list):
-        return joined(body)
+        return _accept(joined(body))
     if isinstance(body, dict):
         for key in ("text", "transcript"):
-            value = body.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
+            text = _accept(body.get(key))
+            if text:
+                return text
         for key in ("results", "segments", "data"):
             value = body.get(key)
             if isinstance(value, list):
-                text = joined(value)
-                if text.strip():
+                text = _accept(joined(value))
+                if text:
                     return text
             elif isinstance(value, dict):
                 text = _payload_text(value)
-                if text.strip():
+                if text:
                     return text
     return ""
 
@@ -73,7 +85,7 @@ def transcribe(filename: str, data: bytes) -> str:
         body = response.text
     text = _payload_text(body).strip()
     if not text:
-        raise ProviderError("ASR 响应里找不到文本（试过 text / results / segments）")
+        raise ProviderError("ASR 响应里找不到文本（试过 text / results / segments；base64 音频字段会被跳过）")
     return _ASR_PREFIX.sub("", text).strip()
 
 

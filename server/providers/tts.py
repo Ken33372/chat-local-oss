@@ -128,11 +128,18 @@ def _dig(body: object, path: str) -> object:
 
 
 def _fill(template: str, values: dict[str, str]) -> str:
-    """按 JSON 字符串转义替换占位符，正文里的引号/换行不会把请求体弄坏。"""
-    out = template
-    for name, value in values.items():
-        out = out.replace("{" + name + "}", json.dumps(value, ensure_ascii=False)[1:-1])
-    return out
+    """一次性替换占位符，按 JSON 字符串转义。
+
+    必须单趟完成：若按字段顺序逐个 replace，正文里恰好出现的 `{voice}` 会被下一轮再替换一次。
+    """
+    if not values:
+        return template
+    pattern = re.compile(r"\{(" + "|".join(re.escape(name) for name in values) + r")\}")
+
+    def swap(match: re.Match) -> str:
+        return json.dumps(values[match.group(1)], ensure_ascii=False)[1:-1]
+
+    return pattern.sub(swap, template)
 
 
 def _template(text: str, voice: str) -> tuple[bytes, str]:

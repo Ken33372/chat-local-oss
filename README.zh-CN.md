@@ -76,7 +76,7 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的 Anthropic 兼容接口 |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
+| `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址或以 `/v1` 结尾的地址（含 `/api/v1` 前缀）自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
 | `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片。根地址自动接 `/v1/chat/completions`，填完整地址原样请求 |
 | `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`；不配就没有朗读按钮 |
@@ -87,7 +87,7 @@ Windows 也可以直接双击 `build.bat` 和 `start.bat`。打开 `http://127.0
 | `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` | `template` 专用：完整地址、请求体 JSON 模板、音频取法（`body` / `base64:字段路径` / `url:字段路径`）、额外请求头 |
 | `SEARCH_PROVIDER` | `none` / `tavily` / `anysearch` / `searxng` |
 | `SEARCH_BASE_URL` / `SEARCH_API_KEY` / `SEARCH_RESULTS` | 联网搜索。Tavily（`https://api.tavily.com`）和 AnySearch（`https://api.anysearch.com`）的 Base URL 可省略；SearXNG 必须填写。Tavily 需要 key；AnySearch 的 key 可留空（匿名限流） |
-| `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | 可选的重排接口，例如 `llama-server --reranking` 或 HuggingFace text-embeddings-inference。填根地址自动接 `/v1/rerank`，填完整地址（TEI 的 `/rerank`）原样请求；响应认 `{"results":[...]}` 和顶层数组 `[{index,score}]` 两种形状。**只在 `SEARCH_PROVIDER=searxng` 这一路起作用**，细节见 [docs/search.zh-CN.md](docs/search.zh-CN.md) |
+| `RERANK_PROVIDER` / `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` / `RERANK_TIMEOUT` | 可选的重排接口，例如 `llama-server --reranking` 或 HuggingFace text-embeddings-inference。填根地址或以 `/v1` 结尾的地址自动接 `/v1/rerank`，填完整地址（TEI 的 `/rerank`）原样请求；响应认 `{"results":[...]}` 和顶层数组 `[{index,score}]` 两种形状。**只在 `SEARCH_PROVIDER=searxng` 这一路起作用**，细节见 [docs/search.zh-CN.md](docs/search.zh-CN.md) |
 | `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG 翻页聚合的调优项，默认 20 / 60 / 5 / 500 |
 | `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | 站点规则，逗号分隔。写 `example.com` 连子域一起算，写 `example.com/docs` 再限定路径前缀 |
 | `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`。默认 `vision`，直接把图片发给模型，**要求模型支持视觉/多模态**；`auto` 先发图，被拒时自动回退 OCR；`ocr` 只做 OCR、不发图。**模型不支持多模态时请设为 `auto` 或 `ocr`，否则发图会收到上游报错。** |

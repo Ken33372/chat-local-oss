@@ -102,12 +102,14 @@ Self-hosted read-aloud has four request shapes. Audio inference servers share no
 
 | provider | Request body | URL rule | Typical servers |
 |---|---|---|---|
-| `openai` | `{model, input, voice, response_format}` | Root URL gets `/v1/audio/speech` appended; any other path is used as-is | llama.cpp, audio.cpp, vLLM, TGI, Kokoro-FastAPI and most forks |
+| `openai` | `{model, input, voice, response_format}` | A root URL, or any URL ending in `/v1` (including prefixed ones such as `/api/v1`), gets `/v1/audio/speech` appended; any other path is used as-is | llama.cpp, audio.cpp, vLLM, TGI, Kokoro-FastAPI and most forks |
 | `deepseek` | `{text, voice_id, format, filter_markdown}` | Official `/v1/tools/tts` | DeepSeek |
 | `engine` | `{engine, input, voice, response_format}` | Full endpoint URL, used as-is (voice required) | Servers that pick the model with an `engine` field, e.g. a self-hosted model console |
 | `template` | Your own JSON template with `{text}` / `{voice}` / `{model}` / `{format}` placeholders | The exact URL you provide | Anything you wrapped in PyTorch + FastAPI; also handles base64 audio fields and audio URLs |
 
 `template` is configured with `TTS_TEMPLATE_URL` / `_BODY` / `_AUDIO` / `_HEADERS` (see `.env.example`); it is env-only.
+
+Placeholders are substituted in a single pass, so literal text such as `{voice}` inside a reply is sent untouched.
 
 **Out of scope:** async workflow servers such as ComfyUI (submit a graph → poll a task → download an artifact). That would need a polling adapter per workflow graph. Put an HTTP audio endpoint in front of it, or open an issue describing your workflow.
 
@@ -121,9 +123,9 @@ Audio and OCR servers likewise have no shared protocol, so the project aligns on
 
 | Capability | Request shape | Response shape | URL rule |
 |---|---|---|---|
-| ASR | Standard multipart (`file` + `model`), accepted by whisper.cpp and most forks | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / plain text | Root URL gets `/v1/audio/transcriptions`; a full URL is used as-is |
+| ASR | Standard multipart (`file` + `model`), accepted by whisper.cpp and most forks | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / plain text; long base64 blobs are skipped | A root URL or any URL ending in `/v1` gets `/v1/audio/transcriptions`; a full URL is used as-is |
 | OCR | DeepSeek uses `/v1/tools/ocr` (documents and images); OpenAI-compatible uses vision chat/completions (images only) | The reply text, either way | Same rule: root URL gets the standard path appended |
-| Rerank | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` or a top-level `[{index,score}]` array (TEI style); a wrapping `data` object is also accepted | Root URL gets `/v1/rerank`; TEI's `/rerank` is used as-is |
+| Rerank | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` or a top-level `[{index,score}]` array (TEI style); a wrapping `data` object is also accepted | A root URL or any URL ending in `/v1` gets `/v1/rerank`; TEI's `/rerank` is used as-is |
 
 Dedicated OCR servers (PaddleOCR, MinerU, Surya) have no common protocol and are not integrated; use an OpenAI-compatible vision endpoint or DeepSeek OCR instead.
 

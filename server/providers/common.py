@@ -30,11 +30,11 @@ def endpoint(base: str, path: str) -> str:
 
 
 def api_url(base: str, path: str) -> str:
-    """各家的路由不统一：Base URL 只填到主机或 /v1 时才拼标准路径；
-    已经带别的路径（如 /rerank、/api/tts/speech）就原样请求，不能逼用户改服务。"""
+    """各家的路由不统一：Base URL 以 /v1 结尾（含 /api/v1、/compatible-mode/v1 这类前缀）
+    或只填到主机时，拼标准路径；已经带别的路径（如 /rerank、/api/tts/speech）就原样请求。"""
     base = (base or "").rstrip("/")
     tail = urlsplit(base).path.rstrip("/")
-    return base if tail and tail != "/v1" else endpoint(base, path)
+    return base if tail and not tail.endswith("/v1") else endpoint(base, path)
 
 
 def detail(response: httpx.Response) -> str:
