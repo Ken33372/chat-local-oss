@@ -102,7 +102,7 @@ Any single value can be overridden by setting its environment variable, which ta
 
 | `LLM_PROVIDER` | Upstream endpoint | Handling | Typical services |
 |---|---|---|---|
-| `anthropic` (default) | `POST {LLM_BASE_URL}/v1/messages` | forwarded as-is | DeepSeek's `/anthropic` endpoint, other Anthropic-compatible gateways |
+| `anthropic` (default) | `POST /v1/messages`: roots, `/anthropic` and `/v1` prefixes get the standard path; a full endpoint ending in `/messages` (any path, e.g. `/gw/v1/messages`) is used as-is | forwarded as-is | DeepSeek's `/anthropic` endpoint, Anthropic-compatible gateways mounted anywhere |
 | `openai` | `POST /v1/chat/completions` (same URL rules as ASR / rerank: roots or URLs ending in `/v1` get the standard path, full endpoints are used as-is) | request rewritten into OpenAI shape, streamed reply translated back into Anthropic events | OpenAI, DeepSeek, Ollama, LM Studio, vLLM, llama.cpp and gateways |
 
 What the OpenAI path covers:
@@ -133,6 +133,8 @@ LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
 ```
 
 Every request for the same conversation (chat, tool rounds, auto title, compression) carries the same `ses_...`.
+
+- **Extra request-body fields**: set `LLM_EXTRA_BODY` to a JSON object, shallow-merged into the upstream request under both protocols, e.g. `{"top_k": 40, "metadata": {"user_id": "u1"}}`. `messages` and `stream` are generated locally and ignored; nested objects are replaced rather than deep-merged. Only read from `.env` / system environment variables (not exposed in the wizard); invalid JSON fails the request loudly instead of being dropped.
 
 Ollama:
 

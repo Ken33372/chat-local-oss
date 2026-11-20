@@ -137,6 +137,8 @@ def _compute() -> dict:
         "LLM_MODEL", llm.get("model"), "deepseek-flash" if deepseek_key else ""
     )
     llm_headers = _headers("LLM_HEADERS", llm.get("headers"))
+    # 额外请求体字段：只走环境变量，浅合并进上游请求体（见 providers/llm.py）
+    llm_extra_body = _env("LLM_EXTRA_BODY")
     try:
         context_limit = int(_pick("LLM_CONTEXT_LIMIT", llm.get("context_limit"), "131072"))
     except ValueError:
@@ -212,6 +214,7 @@ def _compute() -> dict:
         "LLM_API_KEY": llm_key,
         "LLM_MODEL": llm_model,
         "LLM_HEADERS": llm_headers,
+        "LLM_EXTRA_BODY": llm_extra_body,
         "LLM_CONTEXT_LIMIT": context_limit,
         "LLM_MAX_OUTPUT_TOKENS": max_output,
         "ASR_PROVIDER": asr_provider,

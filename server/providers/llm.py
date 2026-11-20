@@ -11,11 +11,12 @@ import hashlib
 import json
 import re
 from typing import AsyncGenerator
+from urllib.parse import urlsplit
 
 import httpx
 
 import config
-from providers.common import api_url, detail
+from providers.common import api_url, detail, join
 
 ZERO_USAGE = {
     "input_tokens": 0,
@@ -41,6 +42,22 @@ def provider() -> str:
 
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+# 这两个字段由本机生成，额外字段里写了也忽略，避免把对话和流式一并覆盖
+_PROTECTED_BODY_KEYS = {"messages", "stream"}
+
+
+def extra_body() -> dict:
+    """额外请求体字段：JSON 对象，浅合并进上游请求体，两种协议通用。"""
+    raw = str(getattr(config, "LLM_EXTRA_BODY", "") or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as error:
+        raise LLMError(f"LLM_EXTRA_BODY 不是合法 JSON：{error}")
+    if not isinstance(data, dict):
+        raise LLMError("LLM_EXTRA_BODY 必须是 JSON 对象")
+    return {str(key): value for key, value in data.items() if str(key) not in _PROTECTED_BODY_KEYS}
 
 
 def _fill(template: str, values: dict[str, str]) -> str:
@@ -112,14 +129,21 @@ def headers(
 def messages_url(base: str, prov: str) -> str:
     if prov == "openai":
         return api_url(base, "/v1/chat/completions")
-    # Anthropic 保持原样：DeepSeek 的端点是 base(/anthropic) + /v1/messages
-    return f"{base.rstrip('/')}/v1/messages"
+    # Anthropic：填前缀（根地址、/anthropic、/v1）就补 /v1/messages；
+    # 已经填到 /messages 的完整接口原样请求，网关放在任意路径下都能接
+    base = (base or "").rstrip("/")
+    if urlsplit(base).path.rstrip("/").endswith("/messages"):
+        return base
+    return join(base, "/v1/messages")
 
 
 def models_url(base: str, prov: str) -> str:
     if prov == "openai":
         return api_url(base, "/v1/models")
-    return f"{base.rstrip('/')}/v1/models"
+    base = (base or "").rstrip("/")
+    if urlsplit(base).path.rstrip("/").endswith("/messages"):
+        base = base[: -len("/messages")]
+    return join(base, "/v1/models")
 
 
 def _blocks_text(content: object) -> str:
@@ -374,6 +398,7 @@ def _json_events(data: dict) -> list[dict]:
 async def _stream_openai(payload: dict, context: dict) -> AsyncGenerator[dict, None]:
     url = messages_url(config.LLM_BASE_URL, "openai")
     body = to_openai(payload)
+    body.update(extra_body())
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(None, connect=15)) as client:
         async with client.stream(
             "POST", url, json=body, headers=headers("openai", config.LLM_API_KEY, config.LLM_HEADERS, context)
@@ -496,9 +521,10 @@ async def _read_openai_stream(response: httpx.Response) -> AsyncGenerator[dict, 
 
 async def _stream_anthropic(payload: dict, context: dict) -> AsyncGenerator[dict, None]:
     url = messages_url(config.LLM_BASE_URL, "anthropic")
+    body = {**payload, **extra_body()}
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(None, connect=15)) as client:
         async with client.stream(
-            "POST", url, json=payload, headers=headers("anthropic", config.LLM_API_KEY, config.LLM_HEADERS, context)
+            "POST", url, json=body, headers=headers("anthropic", config.LLM_API_KEY, config.LLM_HEADERS, context)
         ) as response:
             if response.status_code != 200:
                 raw = (await response.aread()).decode("utf-8", errors="replace")
@@ -566,6 +592,7 @@ async def complete(
         }
         if temperature is not None:
             body["temperature"] = temperature
+    body.update(extra_body())
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(timeout, connect=15)) as client:
         response = await client.post(
             messages_url(config.LLM_BASE_URL, prov), json=body, headers=headers(prov, config.LLM_API_KEY, config.LLM_HEADERS, {"model": config.LLM_MODEL, "session": session_id(session)})

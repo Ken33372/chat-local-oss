@@ -102,7 +102,7 @@ TTS_PROVIDER=deepseek
 
 | `LLM_PROVIDER` | 上游接口 | 请求处理 | 典型服务 |
 |---|---|---|---|
-| `anthropic`（默认） | `POST {LLM_BASE_URL}/v1/messages` | 原样转发 | DeepSeek 的 `/anthropic` 端点、其他 Anthropic 兼容网关 |
+| `anthropic`（默认） | `POST /v1/messages`：根地址、`/anthropic`、`/v1` 这类前缀自动补；填到 `/messages` 的完整接口（任意路径，如 `/gw/v1/messages`）原样请求 | 原样转发 | DeepSeek 的 `/anthropic` 端点、放在任意路径下的 Anthropic 兼容网关 |
 | `openai` | `POST /v1/chat/completions`（地址规则同 ASR / 重排：根地址或以 `/v1` 结尾自动拼，完整地址原样请求） | 请求改写成 OpenAI 结构，流式回复再翻译回 Anthropic 事件 | OpenAI、DeepSeek、Ollama、LM Studio、vLLM、llama.cpp 及各类网关 |
 
 OpenAI 这一路对齐的细节：
@@ -133,6 +133,8 @@ LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
 ```
 
 同一对话的所有请求（正文、工具轮次、自动标题、上下文压缩）都会带同一个 `ses_...`。
+
+- **额外请求体字段**：`LLM_EXTRA_BODY` 填 JSON 对象，浅合并进上游请求体，两种协议通用，例如 `{"top_k": 40, "metadata": {"user_id": "u1"}}`。`messages` 和 `stream` 由本机生成，写了也会忽略；嵌套对象整体替换，不做深度合并。只认 `.env` / 系统环境变量，向导里没有这一项，非法 JSON 会在请求时报错而不是静默丢弃。
 
 Ollama：
 

@@ -92,8 +92,9 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 |---|---|
 | `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR、OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
 | `LLM_PROVIDER` | `anthropic`（默认，`POST /v1/messages`）/ `openai`（`POST /v1/chat/completions`，可接 Ollama、LM Studio、vLLM 等）。两种协议下搜索、引用、思考、附件、标题、压缩行为一致，细节见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#对话模型的两条协议) |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的模型接口；Anthropic 兼容填到 `/anthropic` 这类端点，OpenAI 兼容填根地址、`/v1` 结尾或完整接口地址 |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的模型接口；Anthropic 兼容填 `/anthropic` 这类前缀或完整的 `/v1/messages` 地址，OpenAI 兼容填根地址、`/v1` 结尾或完整接口地址 |
 | `LLM_HEADERS` | 额外请求头，JSON 对象。占位符：`{key}` 引用 `LLM_API_KEY`，`{session}` 是当前对话 ID（形如 `ses_...`），`{model}` 是模型名。用于 Azure 自定义鉴权、身份声明和会话 ID（例如 `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`）；自定义头会覆盖同名默认头 |
+| `LLM_EXTRA_BODY` | 额外请求体字段，JSON 对象，浅合并进上游请求体（两种协议通用）；`messages` 与 `stream` 由本机生成，写了也会忽略。**只对 `.env` 或系统环境变量生效**，向导里没有这一项 |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址或以 `/v1` 结尾的地址（含 `/api/v1` 前缀）自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
