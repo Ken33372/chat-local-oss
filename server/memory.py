@@ -6,13 +6,17 @@
 """
 from __future__ import annotations
 
+import array
 import json
+import math
 import re
 import time
 from datetime import datetime
 
 import config
 import storage
+from providers import embedding as embedding_provider
+from providers import rerank as rerank_provider
 
 MAX_TEXT = 300
 MAX_ITEMS = 200
@@ -31,6 +35,13 @@ def init() -> None:
                 pinned INTEGER NOT NULL DEFAULT 0,
                 source TEXT NOT NULL DEFAULT 'manual',
                 created_at INTEGER NOT NULL DEFAULT 0,
+                updated_at INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS memory_vectors (
+                memory_id INTEGER PRIMARY KEY,
+                model TEXT NOT NULL DEFAULT '',
+                dim INTEGER NOT NULL DEFAULT 0,
+                vec BLOB NOT NULL,
                 updated_at INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS memory_proposals (
@@ -144,6 +155,8 @@ def update_item(item_id: int, text: object | None = None, pinned: bool | None = 
             "UPDATE memories SET text = ?, pinned = ?, updated_at = ? WHERE id = ?",
             (new_text, new_pinned, _now(), item_id),
         )
+        if new_text != row["text"]:
+            conn.execute("DELETE FROM memory_vectors WHERE memory_id = ?", (item_id,))
         row = conn.execute("SELECT * FROM memories WHERE id = ?", (item_id,)).fetchone()
     return _row(row)
 
@@ -151,12 +164,14 @@ def update_item(item_id: int, text: object | None = None, pinned: bool | None = 
 def delete_item(item_id: int) -> None:
     with storage._lock, storage._conn() as conn:
         conn.execute("DELETE FROM memories WHERE id = ?", (item_id,))
+        conn.execute("DELETE FROM memory_vectors WHERE memory_id = ?", (item_id,))
 
 
 def clear_all() -> None:
     with storage._lock, storage._conn() as conn:
         conn.execute("DELETE FROM memories")
         conn.execute("DELETE FROM memory_proposals")
+        conn.execute("DELETE FROM memory_vectors")
 
 
 def export_text() -> str:
@@ -241,23 +256,102 @@ def import_text(raw: str) -> dict:
     return {"added": added, "skipped": skipped, "total": len(parsed)}
 
 
-def injection() -> tuple[str, set[int]]:
-    """返回 (注入文本, 本轮已注入的 id 集合)；关闭注入时返回空。"""
-    if not config.MEMORY_ENABLED or config.MEMORY_INJECT == "off":
-        return "", set()
-    count = max(1, min(10, int(config.MEMORY_INJECT_COUNT or 5)))
+_QUERY_CACHE: dict[tuple[str, str], list[float]] = {}
+LAST_ERROR = ""
+
+
+def _note_error(message: str) -> None:
+    global LAST_ERROR
+    LAST_ERROR = str(message)[:300]
+
+
+def _norm(vec: list[float]) -> list[float]:
+    mag = math.sqrt(sum(value * value for value in vec))
+    return [value / mag for value in vec] if mag else vec
+
+
+def _pack(vec: list[float]) -> bytes:
+    return array.array("f", vec).tobytes()
+
+
+def _unpack(blob: bytes) -> list[float]:
+    values = array.array("f")
+    values.frombytes(blob)
+    return list(values)
+
+
+def _cos(left: list[float], right: list[float]) -> float:
+    return sum(a * b for a, b in zip(left, right))
+
+
+def _embeddings_ready() -> bool:
+    return bool(config.capabilities().get("embedding"))
+
+
+def _sync_vectors(rows: list[dict]) -> dict[int, list[float]]:
+    """确保这些记忆都有当前模型/维度的向量；缺的批量补上。"""
+    model = config.EMBEDDING_MODEL
+    dim = int(config.EMBEDDING_DIM)
     with storage._conn() as conn:
-        rows = conn.execute(
-            "SELECT id, text FROM memories ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?",
-            (count,),
-        ).fetchall()
-    if not rows:
-        return "", set()
-    body = "\n".join(f"- {row['text']}" for row in rows)
-    return (
-        "以下是我对用户的长期记忆，可能过时，与本轮无关就忽略：\n" + body,
-        {row["id"] for row in rows},
+        known = {
+            row["memory_id"]: _unpack(row["vec"])
+            for row in conn.execute(
+                "SELECT memory_id, vec FROM memory_vectors WHERE model = ? AND dim = ?",
+                (model, dim),
+            )
+        }
+    missing = [row for row in rows if row["id"] not in known]
+    if missing:
+        vectors = embedding_provider.embed_batched([row["text"] for row in missing])
+        with storage._lock, storage._conn() as conn:
+            for row, vec in zip(missing, vectors):
+                if len(vec) != dim:
+                    raise RuntimeError(f"向量维度不一致：配置 {dim}，接口返回 {len(vec)}")
+                unit = _norm(vec)
+                known[row["id"]] = unit
+                conn.execute(
+                    "INSERT OR REPLACE INTO memory_vectors "
+                    "(memory_id, model, dim, vec, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (row["id"], model, dim, _pack(unit), _now()),
+                )
+    return {row["id"]: known[row["id"]] for row in rows if row["id"] in known}
+
+
+def _query_vector(text: str) -> list[float]:
+    key = (config.EMBEDDING_MODEL, text)
+    cached = _QUERY_CACHE.get(key)
+    if cached is not None:
+        return cached
+    vec = _norm(embedding_provider.embed([text])[0])
+    dim = int(config.EMBEDDING_DIM)
+    if dim and len(vec) != dim:
+        raise RuntimeError(f"向量维度不一致：配置 {dim}，接口返回 {len(vec)}")
+    if len(_QUERY_CACHE) > 32:
+        _QUERY_CACHE.clear()
+    _QUERY_CACHE[key] = vec
+    return vec
+
+
+def _rerank_rows(query: str, picked: list[dict], top: int) -> list[dict]:
+    if len(picked) <= top or not rerank_provider.configured():
+        return picked[:top]
+    try:
+        order = rerank_provider.rerank(query, [row["text"] for row in picked])
+        return [picked[index] for index in order if 0 <= index < len(picked)][:top]
+    except Exception as error:
+        _note_error(f"重排不可用，按向量顺序：{error}")
+        return picked[:top]
+
+
+def _semantic_order(query: str, rows: list[dict], top: int) -> list[dict]:
+    vectors = _sync_vectors(rows)
+    query_vec = _query_vector(query)
+    scored = sorted(
+        (row for row in rows if row["id"] in vectors),
+        key=lambda row: _cos(query_vec, vectors[row["id"]]),
+        reverse=True,
     )
+    return _rerank_rows(query, scored, top)
 
 
 def _tokens(query: str) -> list[str]:
@@ -270,33 +364,114 @@ def _tokens(query: str) -> list[str]:
     return tokens
 
 
-def search(query: str, exclude: set[int] | None = None) -> tuple[str, list[int]]:
-    query = str(query or "").strip()
-    if not query:
-        return "查询词为空。", []
+def _literal_tokens(query: str) -> list[str]:
+    return [part for part in re.split(r"[\s,，。;；、!?！？:：/]+", query.lower()) if part]
+
+
+def _score_order(query: str, rows: list[dict]) -> list[dict]:
     tokens = _tokens(query)
-    exclude = exclude or set()
+    scored = []
+    for row in rows:
+        text = row["text"].lower()
+        score = sum(text.count(token) for token in tokens)
+        if score > 0:
+            scored.append((score, row))
+    scored.sort(key=lambda item: (-item[0], -item[1]["updatedAt"]))
+    return [row for _, row in scored]
+
+
+def _keyword_order(query: str, rows: list[dict]) -> list[dict]:
+    tokens = _literal_tokens(query)
+    if not tokens:
+        return []
+    scored = []
+    for row in rows:
+        text = row["text"].lower()
+        score = sum(text.count(token) for token in tokens)
+        if score > 0:
+            scored.append((score, row))
+    scored.sort(key=lambda item: (-item[0], -item[1]["updatedAt"]))
+    return [row for _, row in scored]
+
+
+def _all_rows() -> list[dict]:
     with storage._conn() as conn:
         rows = conn.execute(
             "SELECT * FROM memories ORDER BY pinned DESC, updated_at DESC, id DESC"
         ).fetchall()
-    scored: list[tuple[int, dict]] = []
-    for row in rows:
-        if row["id"] in exclude:
-            continue
-        text = row["text"].lower()
-        score = sum(text.count(token) for token in tokens)
-        if score > 0:
-            scored.append((score, _row(row)))
-    if not scored:
+    return [_row(row) for row in rows]
+
+
+def injection(query: str = "") -> tuple[str, set[int]]:
+    """返回 (注入文本, 本轮已注入的 id 集合)；关闭注入时返回空。
+
+    置顶条目始终保留（最多占满名额），其余按注入模式挑选；挑不出结果时回退最近。
+    """
+    mode = str(config.MEMORY_INJECT or "recent")
+    if not config.MEMORY_ENABLED or mode == "off":
+        return "", set()
+    count = max(1, min(10, int(config.MEMORY_INJECT_COUNT or 5)))
+    rows = _all_rows()
+    if not rows:
+        return "", set()
+    if mode == "recent":
+        picked = rows[:count]
+    else:
+        pinned = [row for row in rows if row["pinned"]][:count]
+        others = [row for row in rows if not row["pinned"]]
+        picked = list(pinned)
+        need = count - len(picked)
+        if need > 0 and others:
+            ranked: list[dict] = []
+            if mode == "embedding" and _embeddings_ready():
+                try:
+                    ranked = _semantic_order(query, others, need)
+                except Exception as error:
+                    _note_error(f"向量检索不可用，回退本地打分：{error}")
+            if not ranked:
+                ranked = _score_order(query, others) or _keyword_order(query, others) or others
+            chosen = {row["id"] for row in picked}
+            for row in ranked:
+                if len(picked) >= count:
+                    break
+                if row["id"] not in chosen:
+                    picked.append(row)
+                    chosen.add(row["id"])
+    body = "\n".join(f"- {row['text']}" for row in picked)
+    return (
+        "以下是我对用户的长期记忆，可能过时，与本轮无关就忽略：\n" + body,
+        {row["id"] for row in picked},
+    )
+
+
+def search(
+    query: str, exclude: set[int] | None = None, mode: str | None = None
+) -> tuple[str, list[int]]:
+    query = str(query or "").strip()
+    if not query:
+        return "查询词为空。", []
+    mode = mode or str(config.MEMORY_SEARCH_MODE or "score")
+    exclude = exclude or set()
+    rows = [row for row in _all_rows() if row["id"] not in exclude]
+    if not rows:
         return "没有找到未注入本轮上下文的记忆。", []
-    scored.sort(key=lambda item: (-item[0], -item[1]["updatedAt"]))
-    picked = scored[:5]
+    picked: list[dict] = []
+    if mode == "embedding" and _embeddings_ready():
+        try:
+            picked = _semantic_order(query, rows, 5)
+        except Exception as error:
+            _note_error(f"向量检索不可用，回退本地打分：{error}")
+    if not picked and mode == "keyword":
+        picked = _keyword_order(query, rows)[:5]
+    if not picked:
+        picked = _score_order(query, rows)[:5]
+    if not picked:
+        return "没有找到未注入本轮上下文的记忆。", []
     lines = [
-        f"[{index}] {item['text']}（更新于 {_days_ago(item['updatedAt'])}）"
-        for index, (_, item) in enumerate(picked, start=1)
+        f"[{index}] {row['text']}（更新于 {_days_ago(row['updatedAt'])}）"
+        for index, row in enumerate(picked, start=1)
     ]
-    return "\n".join(lines), [item["id"] for _, item in picked]
+    return "\n".join(lines), [row["id"] for row in picked]
 
 
 def _today_start() -> int:

@@ -37,6 +37,8 @@ const fail = (error: unknown) =>
 const DEFAULT_SETTINGS: MemorySettings = {
   enabled: false,
   inject: 'recent',
+  inject_mode: 'recent',
+  search_mode: 'score',
   inject_count: 5,
   tools: true,
   write: 'propose',
@@ -54,6 +56,8 @@ export const MemorySettingsPanel = () => {
     null
   )
   const [limits, setLimits] = useState({ text: 100, items: 200 })
+  const [embeddingReady, setEmbeddingReady] = useState(false)
+  const [embeddingError, setEmbeddingError] = useState('')
   const [busy, setBusy] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
   const refreshPending = useMemoryStore((state) => state.refresh)
@@ -81,6 +85,8 @@ export const MemorySettingsPanel = () => {
         if (status.memory?.limits) {
           setLimits(status.memory.limits)
         }
+        setEmbeddingReady(Boolean(status.capabilities.embedding))
+        setEmbeddingError(status.memory?.embedding_error ?? '')
         await reload()
       } catch (error) {
         if (!cancelled) {
@@ -237,74 +243,11 @@ export const MemorySettingsPanel = () => {
         description={t('memoryEnabledDescription')}
         action={<Switch checked={enabled} label={t('memoryEnabled')} onChange={() => void patch({ enabled: !enabled })} />}
       />
-      {enabled ? (
-        <>
-          <Cell
-            label={t('memoryInject')}
-            description={t('memoryInjectDescription')}
-            action={
-              <Select
-                ariaLabel={t('memoryInject')}
-                value={settings.inject}
-                options={[
-                  { value: 'recent', label: t('memoryInjectRecent') },
-                  { value: 'off', label: t('memoryInjectOff') },
-                ]}
-                onChange={(value) => void patch({ inject: value as MemorySettings['inject'] })}
-              />
-            }
-          />
-          {settings.inject !== 'off' ? (
-            <Cell
-              label={t('memoryCount')}
-              description={t('memoryCountDescription')}
-              action={
-                <Select
-                  ariaLabel={t('memoryCount')}
-                  value={String(settings.inject_count)}
-                  options={[3, 5, 8, 10].map((value) => ({ value: String(value), label: String(value) }))}
-                  onChange={(value) => void patch({ inject_count: Number(value) })}
-                />
-              }
-            />
-          ) : null}
-          <Cell
-            label={t('memoryTools')}
-            description={t('memoryToolsDescription')}
-            action={
-              <Switch
-                checked={settings.tools}
-                label={t('memoryTools')}
-                onChange={() => void patch({ tools: !settings.tools })}
-              />
-            }
-          />
-          <Cell
-            label={t('memoryWrite')}
-            description={t('memoryWriteDescription')}
-            action={
-              <Select
-                ariaLabel={t('memoryWrite')}
-                value={settings.write}
-                options={[
-                  { value: 'propose', label: t('memoryWritePropose') },
-                  { value: 'off', label: t('memoryWriteOff') },
-                ]}
-                onChange={(value) => void patch({ write: value as MemorySettings['write'] })}
-              />
-            }
-          />
-        </>
-      ) : null}
-
-      <div className={styles.memorySection}>
-        <div className={styles.memorySectionTitle}>
-          {t('memoryPending')}
-          {proposals.length ? ` · ${proposals.length}` : ''}
-        </div>
-        {proposals.length === 0 ? (
-          <div className={styles.memoryHint}>{t('memoryPendingEmpty')}</div>
-        ) : (
+      {proposals.length > 0 ? (
+        <div className={styles.memorySection}>
+          <div className={styles.memorySectionTitle}>
+            {t('memoryPending')} · {proposals.length}
+          </div>
           <div className={styles.memoryList}>
             {proposals.map((proposal) => (
               <div key={proposal.id} className={clsx(styles.memoryRow, styles.memoryRowPending)}>
@@ -320,8 +263,103 @@ export const MemorySettingsPanel = () => {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
+
+      {enabled ? (
+        <details className={styles.memorySettings}>
+          <summary>{t('memoryAdvanced')}</summary>
+        <Cell
+          label={t('memoryInject')}
+          description={t('memoryInjectDescription')}
+          action={
+            <Select
+              ariaLabel={t('memoryInject')}
+              value={settings.inject_mode ?? (settings.inject === 'off' ? 'off' : 'recent')}
+              options={[
+                { value: 'recent', label: t('memoryInjectRecent') },
+                { value: 'keyword', label: t('memoryInjectModeKeyword') },
+                { value: 'embedding', label: t('memoryInjectModeEmbedding') },
+                { value: 'off', label: t('memoryInjectModeOff') },
+              ]}
+              onChange={(value) =>
+                void patch({
+                  inject_mode: value as MemorySettings['inject_mode'],
+                  inject: value === 'off' ? 'off' : 'recent',
+                })
+              }
+            />
+          }
+        />
+        {settings.inject_mode !== 'off' ? (
+          <Cell
+            label={t('memoryCount')}
+            description={t('memoryCountDescription')}
+            action={
+              <Select
+                ariaLabel={t('memoryCount')}
+                value={String(settings.inject_count)}
+                options={[3, 5, 8, 10].map((value) => ({ value: String(value), label: String(value) }))}
+                onChange={(value) => void patch({ inject_count: Number(value) })}
+              />
+            }
+          />
+        ) : null}
+        <Cell
+          label={t('memoryTools')}
+          description={t('memoryToolsDescription')}
+          action={
+            <Switch
+              checked={settings.tools}
+              label={t('memoryTools')}
+              onChange={() => void patch({ tools: !settings.tools })}
+            />
+          }
+        />
+        <Cell
+          label={t('memorySearchMode')}
+          description={t('memorySearchModeDescription')}
+          action={
+            <Select
+              ariaLabel={t('memorySearchMode')}
+              value={settings.search_mode ?? 'score'}
+              options={[
+                { value: 'keyword', label: t('memorySearchModeKeyword') },
+                { value: 'score', label: t('memorySearchModeScore') },
+                { value: 'embedding', label: t('memorySearchModeEmbedding') },
+              ]}
+              onChange={(value) =>
+                void patch({ search_mode: value as MemorySettings['search_mode'] })
+              }
+            />
+          }
+        />
+        <Cell
+          label={t('memoryWrite')}
+          description={t('memoryWriteDescription')}
+          action={
+            <Select
+              ariaLabel={t('memoryWrite')}
+              value={settings.write}
+              options={[
+                { value: 'propose', label: t('memoryWritePropose') },
+                { value: 'off', label: t('memoryWriteOff') },
+              ]}
+              onChange={(value) => void patch({ write: value as MemorySettings['write'] })}
+            />
+          }
+        />
+        {(settings.inject_mode === 'embedding' || settings.search_mode === 'embedding') &&
+        !embeddingReady ? (
+          <div className={styles.memoryHint}>{t('memoryEmbeddingMissing')}</div>
+        ) : null}
+        {embeddingError ? (
+          <div className={styles.memoryHint}>
+            {t('memoryEmbeddingError', { message: embeddingError })}
+          </div>
+        ) : null}
+        </details>
+      ) : null}
 
       <div className={styles.memorySection}>
         <div className={styles.memorySectionHeader}>

@@ -17,6 +17,13 @@ export type SetupStatus = {
   asr: { provider: string; base_url: string; has_key: boolean; model: string }
   ocr: { provider: string; base_url: string; has_key: boolean; model: string }
   rerank: { provider: string; base_url: string; has_key: boolean; model: string }
+  embedding: {
+    provider: string
+    base_url: string
+    has_key: boolean
+    model: string
+    dim: number
+  }
   tts: {
     provider: string
     base_url: string
@@ -32,11 +39,13 @@ export type SetupStatus = {
     ocr: boolean
     tts: boolean
     memory: boolean
+    embedding: boolean
   }
   memory: MemorySettings & {
     count: number
     pending: number
     limits: { text: number; items: number }
+    embedding_error: string
   }
 }
 
@@ -54,6 +63,13 @@ export type SetupBody = {
   asr: { provider: string; base_url: string; api_key: string | null; model: string }
   ocr: { provider: string; base_url: string; api_key: string | null; model: string }
   rerank: { provider: string; base_url: string; api_key: string | null; model: string }
+  embedding: {
+    provider: string
+    base_url: string
+    api_key: string | null
+    model: string
+    dim: number
+  }
   tts: {
     provider: string
     base_url: string

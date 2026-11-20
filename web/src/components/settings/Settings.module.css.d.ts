@@ -59,6 +59,7 @@ declare const styles: {
   readonly "memoryTextarea": string;
   readonly "memoryEditorMeta": string;
   readonly "memoryEditorActions": string;
+  readonly "memorySettings": string;
 };
 export = styles;
 

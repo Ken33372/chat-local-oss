@@ -21,6 +21,8 @@ PROVIDER_BLOCKS = {
     "rerank": ("provider", "base_url", "api_key", "model"),
     # 朗读多两个字段：音色名与返回容器（wav/mp3/opus/pcm）
     "tts": ("provider", "base_url", "api_key", "model", "voice", "response_format"),
+    # 向量：只支持 OpenAI 兼容；dim 由用户按模型填，服务返回的维度会与它校验
+    "embedding": ("provider", "base_url", "api_key", "model", "dim"),
 }
 
 
@@ -90,6 +92,11 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
                 item["results"] = 6
         else:
             item["model"] = _text(block.get("model"), 200)
+        if name == "embedding":
+            dim = _int(block.get("dim"), old.get("dim"), 0)
+            if dim < 0 or dim > 16384:
+                raise ValueError("向量维度需在 0 到 16384 之间（0 表示未填）")
+            item["dim"] = dim
         if name == "tts":
             item["voice"] = _text(block.get("voice"), 100)
             audio_format = _text(block.get("response_format"), 20).lower() or "wav"
@@ -100,16 +107,31 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
     # 记忆只影响本地/自建后端；向导不传这个分块时沿用旧值，避免一次保存把开关清掉
     memory = body.get("memory") if isinstance(body.get("memory"), dict) else {}
     old_memory = previous.get("memory") if isinstance(previous.get("memory"), dict) else {}
-    inject = _text(memory.get("inject"), 16).lower() or _text(old_memory.get("inject"), 16).lower() or "recent"
-    if inject not in ("recent", "off"):
-        raise ValueError("记忆注入方式只能是 recent（置顶+最近）或 off")
+    inject_mode = (
+        _text(memory.get("inject_mode"), 16).lower()
+        or _text(old_memory.get("inject_mode"), 16).lower()
+        or _text(memory.get("inject"), 16).lower()
+        or _text(old_memory.get("inject"), 16).lower()
+        or "recent"
+    )
+    if inject_mode not in ("off", "recent", "keyword", "embedding"):
+        raise ValueError("记忆注入模式只能是 off / recent / keyword / embedding")
+    search_mode = (
+        _text(memory.get("search_mode"), 16).lower()
+        or _text(old_memory.get("search_mode"), 16).lower()
+        or "score"
+    )
+    if search_mode not in ("keyword", "score", "embedding"):
+        raise ValueError("记忆检索模式只能是 keyword / score / embedding")
     write = _text(memory.get("write"), 16).lower() or _text(old_memory.get("write"), 16).lower() or "propose"
     if write not in ("propose", "off"):
         raise ValueError("记忆写入方式只能是 propose（提议待确认）或 off")
     count = _int(memory.get("inject_count"), old_memory.get("inject_count"), 5)
     result["memory"] = {
         "enabled": _bool(memory.get("enabled"), old_memory.get("enabled"), False),
-        "inject": inject,
+        "inject": "off" if inject_mode == "off" else "recent",
+        "inject_mode": inject_mode,
+        "search_mode": search_mode,
         "inject_count": max(1, min(10, count)),
         "tools": _bool(memory.get("tools"), old_memory.get("tools"), True),
         "write": write,

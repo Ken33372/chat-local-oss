@@ -46,23 +46,40 @@ The receipt is delivered once per proposal, then marked as notified.
 | Setting | Values | Default |
 |---|---|---|
 | Enable long-term memory | on / off | off |
-| Auto-inject | pinned + recent / off | pinned + recent |
+| Injection mode | pinned + recent / relevance (local keywords) / advanced (embeddings, optional rerank) / off | pinned + recent |
+| Memory search mode | keywords / relevance (local scoring) / advanced (embeddings, optional rerank) | relevance (local scoring) |
 | Injected items | 1–10 | 5 |
 | Allow model search and proposals | on / off | on |
 | Write mode | propose for confirmation / block model writes | propose |
 
-Environment variables: `CHAT_LOCAL_MEMORY`, `CHAT_LOCAL_MEMORY_INJECT`, `CHAT_LOCAL_MEMORY_COUNT`, `CHAT_LOCAL_MEMORY_TOOLS`, `CHAT_LOCAL_MEMORY_WRITE` (env wins over `data/config.json`).
+Environment variables: `CHAT_LOCAL_MEMORY`, `CHAT_LOCAL_MEMORY_INJECT_MODE`, `CHAT_LOCAL_MEMORY_SEARCH_MODE`, `CHAT_LOCAL_MEMORY_COUNT`, `CHAT_LOCAL_MEMORY_TOOLS`, `CHAT_LOCAL_MEMORY_WRITE` (env wins over `data/config.json`).
 
 ### Selection
 
-Pinned first, then most recently updated, up to the configured count. Stored in the local `chat.db` (`memories` table).
+Pinned entries are always kept (up to the slot count); the rest are chosen by the injection mode:
+
+| Mode | How the remaining slots are filled | Requires |
+|---|---|---|
+| Pinned + recent | Most recently updated first | Nothing |
+| Relevance (local keywords) | Word/character overlap with the latest user message | Nothing |
+| Advanced (embeddings) | Cosine similarity, optionally re-sorted by rerank | `EMBEDDING_*`; rerank optional |
+
+If a mode returns nothing (for example no keyword hits), selection falls back to most recent so an empty block is never injected. Stored in the local `chat.db` (`memories` table).
 
 ### Tools
 
 | Tool | Behaviour |
 |---|---|
-| `search_memory(query)` | Searches only items **not injected this turn**, returns at most 5 |
+| `search_memory(query)` | Searches only items **not injected this turn**, returns at most 5; ranking follows the memory search mode and can use rerank |
 | `remember(text, pinned?)` | Never writes directly; creates a pending proposal |
+
+### Embeddings and rerank
+
+- Embedding endpoint: OpenAI-compatible `/v1/embeddings`, configured via `EMBEDDING_PROVIDER` / `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIM`
+- **Dimension is required and must match the model** (1024 for Qwen3-Embedding-0.6B); changing the model or dimension re-embeds everything into `memory_vectors`
+- Rerank reuses `RERANK_*` and only runs when configured
+- On failure (service down, dimension mismatch, timeout) retrieval falls back to local scoring and the last error is shown at the top of Settings → Memory
+- Cost: one embedding request per turn in advanced mode (about 0.3 s measured; identical text is cached), plus one rerank request when configured (about 1 s)
 
 Server-side guards for `remember`:
 

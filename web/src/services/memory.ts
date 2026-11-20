@@ -19,7 +19,10 @@ export type MemoryProposal = {
 
 export type MemorySettings = {
   enabled: boolean
+  /** 旧字段，保留兼容；实际选择看 inject_mode */
   inject: 'recent' | 'off'
+  inject_mode: 'off' | 'recent' | 'keyword' | 'embedding'
+  search_mode: 'keyword' | 'score' | 'embedding'
   inject_count: number
   tools: boolean
   write: 'propose' | 'off'

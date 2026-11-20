@@ -902,3 +902,33 @@
   justify-content: space-between;
   gap: 8px;
 }
+
+.memorySettings {
+  padding: 4px 0;
+  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.memorySettings > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.memorySettings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.memorySettings > summary::after {
+  content: '▾';
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.memorySettings[open] > summary::after {
+  content: '▴';
+}

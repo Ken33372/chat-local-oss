@@ -42,6 +42,10 @@ type Form = {
   rerankBase: string
   rerankKey: string
   rerankModel: string
+  embeddingBase: string
+  embeddingKey: string
+  embeddingModel: string
+  embeddingDim: string
   ttsProvider: string
   ttsBase: string
   ttsKey: string
@@ -73,6 +77,10 @@ const emptyForm: Form = {
   rerankBase: '',
   rerankKey: '',
   rerankModel: '',
+  embeddingBase: '',
+  embeddingKey: '',
+  embeddingModel: '',
+  embeddingDim: '',
   ttsProvider: 'none',
   ttsBase: '',
   ttsKey: '',
@@ -104,6 +112,10 @@ const formFromStatus = (status: SetupStatus): Form => ({
   rerankBase: status.rerank?.base_url ?? '',
   rerankKey: '',
   rerankModel: status.rerank?.model ?? '',
+  embeddingBase: status.embedding?.base_url ?? '',
+  embeddingKey: '',
+  embeddingModel: status.embedding?.model ?? '',
+  embeddingDim: status.embedding?.dim ? String(status.embedding.dim) : '',
   ttsProvider: status.tts?.provider ?? 'none',
   ttsBase: status.tts?.base_url ?? '',
   ttsKey: '',
@@ -153,6 +165,13 @@ const bodyFrom = (form: Form, status: SetupStatus | null): SetupBody => ({
     base_url: form.rerankBase.trim(),
     api_key: keepKey(form.rerankKey, status?.rerank?.has_key ?? false),
     model: form.rerankModel.trim(),
+  },
+  embedding: {
+    provider: form.embeddingBase.trim() ? 'openai' : 'none',
+    base_url: form.embeddingBase.trim(),
+    api_key: keepKey(form.embeddingKey, status?.embedding?.has_key ?? false),
+    model: form.embeddingModel.trim(),
+    dim: Number(form.embeddingDim) || 0,
   },
   tts: {
     provider: form.ttsProvider,
@@ -534,10 +553,8 @@ export const SetupWizard = () => {
                 </label>
               </>
             ) : null}
-            {form.searchProvider === 'searxng' ? (
-              <>
-                <span className={styles.label}>{t('setupRerankProvider')}</span>
-                <p className={styles.hint}>{t('setupRerankHint')}</p>
+            <span className={styles.label}>{t('setupRerankProvider')}</span>
+            <p className={styles.hint}>{t('setupRerankHint')}</p>
                 <label className={styles.field}>
                   <span className={styles.label}>Base URL</span>
                   <input
@@ -559,17 +576,62 @@ export const SetupWizard = () => {
                     onChange={(event) => update('rerankKey', event.target.value)}
                   />
                 </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>{t('setupModel')}</span>
-                  <input
-                    className={styles.input}
-                    value={form.rerankModel}
-                    disabled={disabled}
-                    onChange={(event) => update('rerankModel', event.target.value)}
-                  />
-                </label>
-              </>
-            ) : null}
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupModel')}</span>
+              <input
+                className={styles.input}
+                value={form.rerankModel}
+                disabled={disabled}
+                onChange={(event) => update('rerankModel', event.target.value)}
+              />
+            </label>
+            <span className={styles.label}>{t('setupEmbeddingProvider')}</span>
+            <p className={styles.hint}>{t('setupEmbeddingHint')}</p>
+            <label className={styles.field}>
+              <span className={styles.label}>Base URL</span>
+              <input
+                className={styles.input}
+                value={form.embeddingBase}
+                disabled={disabled}
+                placeholder="http://127.0.0.1:8080"
+                onChange={(event) => update('embeddingBase', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>API Key</span>
+              <input
+                className={styles.input}
+                type="password"
+                value={form.embeddingKey}
+                disabled={disabled}
+                placeholder={status?.embedding?.has_key ? t('setupApiKeySaved') : ''}
+                onChange={(event) => update('embeddingKey', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupModel')}</span>
+              <input
+                className={styles.input}
+                value={form.embeddingModel}
+                disabled={disabled}
+                placeholder="bge-m3"
+                onChange={(event) => update('embeddingModel', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupEmbeddingDim')}</span>
+              <input
+                className={styles.input}
+                type="number"
+                min={0}
+                max={16384}
+                value={form.embeddingDim}
+                disabled={disabled}
+                placeholder="1024"
+                onChange={(event) => update('embeddingDim', event.target.value)}
+              />
+              <span className={styles.hint}>{t('setupEmbeddingDimHint')}</span>
+            </label>
             <ProviderSelect
               label={t('setupAsrProvider')}
               value={form.asrProvider}

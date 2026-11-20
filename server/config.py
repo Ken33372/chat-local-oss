@@ -212,9 +212,23 @@ def _compute() -> dict:
     # 长期记忆：界面上配，只影响本地/自建后端；没有任何自动写入
     mem = _block("memory")
     memory_enabled = _flag("CHAT_LOCAL_MEMORY", mem.get("enabled"), False)
-    memory_inject = _pick("CHAT_LOCAL_MEMORY_INJECT", mem.get("inject"), "recent").lower()
-    if memory_inject not in ("recent", "off"):
-        memory_inject = "recent"
+    # 注入模式：off / recent（置顶+最近）/ keyword（本地关键词打分）/ embedding（向量+可选重排）
+    memory_inject_mode = _pick(
+        "CHAT_LOCAL_MEMORY_INJECT_MODE",
+        mem.get("inject_mode"),
+        str(mem.get("inject") or "recent"),
+    ).lower()
+    if memory_inject_mode == "off":
+        memory_inject_mode = "off"
+    elif memory_inject_mode not in ("recent", "keyword", "embedding"):
+        memory_inject_mode = "recent"
+    memory_inject = memory_inject_mode
+    # 工具检索模式：keyword（字面）/ score（本地打分）/ embedding（向量+可选重排）
+    memory_search_mode = _pick(
+        "CHAT_LOCAL_MEMORY_SEARCH_MODE", mem.get("search_mode"), "score"
+    ).lower()
+    if memory_search_mode not in ("keyword", "score", "embedding"):
+        memory_search_mode = "score"
     try:
         memory_inject_count = int(_pick("CHAT_LOCAL_MEMORY_COUNT", mem.get("inject_count"), "5"))
     except ValueError:
@@ -234,6 +248,21 @@ def _compute() -> dict:
         rerank_timeout = float(_env("RERANK_TIMEOUT", "20"))
     except ValueError:
         rerank_timeout = 20.0
+
+    # 向量：记忆高级检索用；只支持 OpenAI 兼容 /v1/embeddings
+    embedding = _block("embedding")
+    embedding_provider = _pick("EMBEDDING_PROVIDER", embedding.get("provider"), "none").lower()
+    if embedding_provider not in ("none", "openai"):
+        embedding_provider = "none"
+    embedding_base = _pick("EMBEDDING_BASE_URL", embedding.get("base_url"), "").rstrip("/")
+    embedding_key = _pick("EMBEDDING_API_KEY", embedding.get("api_key"), "")
+    embedding_model = _pick("EMBEDDING_MODEL", embedding.get("model"), "")
+    try:
+        embedding_dim = int(_pick("EMBEDDING_DIM", embedding.get("dim"), "0") or 0)
+    except ValueError:
+        embedding_dim = 0
+    if embedding_dim < 0:
+        embedding_dim = 0
 
     return {
         "DEEPSEEK_API_KEY": deepseek_key,
@@ -284,8 +313,15 @@ def _compute() -> dict:
         "RERANK_API_KEY": rerank_key,
         "RERANK_MODEL": rerank_model,
         "RERANK_TIMEOUT": rerank_timeout,
+        "EMBEDDING_PROVIDER": embedding_provider,
+        "EMBEDDING_BASE_URL": embedding_base,
+        "EMBEDDING_API_KEY": embedding_key,
+        "EMBEDDING_MODEL": embedding_model,
+        "EMBEDDING_DIM": embedding_dim,
         "MEMORY_ENABLED": memory_enabled,
         "MEMORY_INJECT": memory_inject,
+        "MEMORY_INJECT_MODE": memory_inject_mode,
+        "MEMORY_SEARCH_MODE": memory_search_mode,
         "MEMORY_INJECT_COUNT": memory_inject_count,
         "MEMORY_TOOLS": memory_tools,
         "MEMORY_WRITE": memory_write,
@@ -317,4 +353,10 @@ def capabilities() -> dict:
         "tts": (TTS_PROVIDER in ("deepseek", "openai", "engine") and bool(TTS_BASE_URL))
         or (TTS_PROVIDER == "template" and bool(TTS_TEMPLATE_URL or TTS_BASE_URL)),
         "memory": bool(MEMORY_ENABLED),
+        "embedding": bool(
+            EMBEDDING_PROVIDER != "none"
+            and EMBEDDING_BASE_URL
+            and EMBEDDING_MODEL
+            and EMBEDDING_DIM > 0
+        ),
     }

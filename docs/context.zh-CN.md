@@ -47,23 +47,40 @@
 | 项 | 取值 | 默认 |
 |---|---|---|
 | 启用长期记忆 | 开 / 关 | 关 |
-| 自动注入 | 置顶 + 最近 / 不注入 | 置顶 + 最近 |
+| 注入方式 | 置顶 + 最近 / 按相关性（本地关键词）/ 高级检索（向量，可选重排）/ 不注入 | 置顶 + 最近 |
+| 记忆检索方式 | 关键词 / 按相关性（本地打分）/ 高级检索（向量，可选重排） | 按相关性（本地打分） |
 | 注入条数 | 1–10 | 5 |
 | 允许模型查询与提议 | 开 / 关 | 开 |
 | 写入方式 | 提议待确认 / 禁止模型写入 | 提议待确认 |
 
-对应的环境变量：`CHAT_LOCAL_MEMORY`、`CHAT_LOCAL_MEMORY_INJECT`、`CHAT_LOCAL_MEMORY_COUNT`、`CHAT_LOCAL_MEMORY_TOOLS`、`CHAT_LOCAL_MEMORY_WRITE`（环境变量优先于界面保存的 `data/config.json`）。
+对应的环境变量：`CHAT_LOCAL_MEMORY`、`CHAT_LOCAL_MEMORY_INJECT_MODE`、`CHAT_LOCAL_MEMORY_SEARCH_MODE`、`CHAT_LOCAL_MEMORY_COUNT`、`CHAT_LOCAL_MEMORY_TOOLS`、`CHAT_LOCAL_MEMORY_WRITE`（环境变量优先于界面保存的 `data/config.json`）。
 
 ### 注入的选条规则
 
-置顶优先，其余按更新时间倒序，取「注入条数」条，拼成上面那段文字。存储在本机 `chat.db` 的 `memories` 表。
+置顶条目始终保留（最多占满名额），其余按所选注入方式挑选：
+
+| 注入方式 | 怎么挑剩余的 | 依赖 |
+|---|---|---|
+| 置顶 + 最近 | 按更新时间倒序 | 无 |
+| 按相关性（本地关键词） | 与本轮用户消息做字词重合打分 | 无 |
+| 高级检索（向量） | 问题转向量，记忆按余弦相似度排序；配了重排接口再二次排序 | `EMBEDDING_*`；重排可选 |
+
+任一种方式挑不出结果（例如关键词完全不命中）都会回退到最近，不会注入空段。存储在本机 `chat.db` 的 `memories` 表。
 
 ### 模型的两个工具
 
 | 工具 | 行为 |
 |---|---|
-| `search_memory(query)` | 只在**本轮未注入**的条目里查，最多回 5 条 |
+| `search_memory(query)` | 只在**本轮未注入**的条目里查，最多回 5 条；排序方式跟随「记忆检索方式」，高级检索同样可加重排 |
 | `remember(text, pinned?)` | 不直接入库，生成一条待确认提案 |
+
+### 向量与重排
+
+- 向量接口：OpenAI 兼容 `/v1/embeddings`，配置项 `EMBEDDING_PROVIDER` / `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIM`
+- **维度必须手填且与模型一致**（如 Qwen3-Embedding-0.6B 为 1024）；模型或维度变化会自动重算全部向量，存 `memory_vectors` 表
+- 重排复用 `RERANK_*`，配了才会对向量候选做二次排序，没配就只按余弦相似度
+- 调用失败（服务没开、维度不符、超时）自动回退本地打分，并在设置 → 记忆顶部显示上次错误；不会卡住聊天
+- 开销：向量模式每轮多一次 embedding 请求（实测约 0.3 秒，同一句话会缓存），配了重排再多一次（实测约 1 秒）
 
 `remember` 的服务端拦截（不靠模型自觉）：
 

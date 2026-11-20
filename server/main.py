@@ -261,6 +261,13 @@ def _masked_status() -> dict:
             "has_key": bool(config.RERANK_API_KEY),
             "model": config.RERANK_MODEL,
         },
+        "embedding": {
+            "provider": config.EMBEDDING_PROVIDER,
+            "base_url": config.EMBEDDING_BASE_URL,
+            "has_key": bool(config.EMBEDDING_API_KEY),
+            "model": config.EMBEDDING_MODEL,
+            "dim": config.EMBEDDING_DIM,
+        },
         "tts": {
             "provider": config.TTS_PROVIDER,
             "base_url": config.TTS_BASE_URL,
@@ -275,12 +282,15 @@ def _masked_status() -> dict:
         "memory": {
             "enabled": config.MEMORY_ENABLED,
             "inject": config.MEMORY_INJECT,
+            "inject_mode": config.MEMORY_INJECT_MODE,
+            "search_mode": config.MEMORY_SEARCH_MODE,
             "inject_count": config.MEMORY_INJECT_COUNT,
             "tools": config.MEMORY_TOOLS,
             "write": config.MEMORY_WRITE,
             "count": len(memory.list_items()),
             "pending": len(memory.pending_proposals()),
             "limits": {"text": memory.MAX_TEXT, "items": memory.MAX_ITEMS},
+            "embedding_error": memory.LAST_ERROR,
         },
     }
 

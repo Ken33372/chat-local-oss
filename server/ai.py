@@ -413,6 +413,24 @@ def _system_prompt(
     return "\n".join(parts)
 
 
+def _latest_user_text(messages: list[dict]) -> str:
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            text = "".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            if text.strip():
+                return text.strip()
+    return ""
+
+
 def _title_for(messages: list[dict]) -> str:
     for message in messages:
         if message.get("role") != "user":
@@ -636,7 +654,9 @@ def _execute_memory_tool(
     name: str, payload: dict, injected: set[int], used_web: bool, session: str = ""
 ) -> tuple[str, dict]:
     if name == "search_memory":
-        text, ids = memory.search(str(payload.get("query") or ""), injected)
+        text, ids = memory.search(
+            str(payload.get("query") or ""), injected, mode=config.MEMORY_SEARCH_MODE
+        )
         return text, {"action": "search", "count": len(ids)}
     if used_web:
         return "本轮已经读过网页，按规则不能写入记忆；请让用户手动确认。", {
@@ -717,7 +737,7 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     messages, reminder = await _prepare_messages(raw_messages, force_ocr=image_mode == "ocr")
     has_image = _has_image(raw_messages)
     summary_text = str(body.get("context_summary") or "").strip()
-    memory_block, injected_ids = memory.injection()
+    memory_block, injected_ids = memory.injection(_latest_user_text(raw_messages))
     if config.MEMORY_ENABLED:
         # 用户在设置里确认/忽略过的提案，下一轮告诉模型一次，避免它仍以为“待确认”
         outcome = memory.take_session_events(session)
