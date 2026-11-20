@@ -14,7 +14,7 @@ Everything can go into the project's `.env`, or be written to `data/config.json`
 | Search | `SEARCH_PROVIDER`; `SEARCH_BASE_URL` when using `searxng` | Base URL for Tavily / AnySearch, `SEARCH_RESULTS` (1–12, default 6) |
 | Rerank | `RERANK_PROVIDER` **and** `RERANK_BASE_URL` — both | `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT` |
 | Voice input | `ASR_PROVIDER`, `ASR_BASE_URL` | `ASR_MODEL` (default `whisper-1`), `ASR_API_KEY` |
-| OCR | `OCR_PROVIDER`, `OCR_BASE_URL` | `OCR_MODEL` (default `gpt-4o-mini`), `OCR_API_KEY` |
+| Attachment parsing | Images: `CHAT_LOCAL_IMAGE_PARSER`; documents: `CHAT_LOCAL_DOC_PARSER` | Two credential sets: `OCR_OPENAI_*` / `OCR_DEEPSEEK_*` |
 | Read-aloud | `TTS_PROVIDER`, `TTS_BASE_URL`; `TTS_VOICE` too when the provider is `engine` | `TTS_MODEL` (default `tts-1`), `TTS_RESPONSE_FORMAT`, `TTS_MAX_CHARS` |
 
 Setting only `RERANK_BASE_URL` does **not** turn reranking on: `RERANK_PROVIDER` defaults to `none`, so both are required.
@@ -31,7 +31,7 @@ LLM_MODEL=qwen3
 LLM_API_KEY=
 ```
 
-You get chat, thinking, history and context management. Search, voice, OCR and read-aloud have no UI entry.
+You get chat, thinking, history and context management. Search, voice, attachment parsing and read-aloud have no UI entry.
 
 The model endpoint can speak either protocol, selected with `LLM_PROVIDER`: the default `anthropic` posts to `/v1/messages` (for example DeepSeek's `/anthropic` endpoint); `openai` posts to `/v1/chat/completions`, so Ollama, LM Studio, vLLM, llama.cpp and hosted APIs connect directly without an extra gateway. See "The two LLM protocols" below.
 
@@ -67,11 +67,16 @@ ASR_BASE_URL=http://127.0.0.1:9000
 ASR_MODEL=whisper-1
 ASR_API_KEY=
 
-# ---- OCR: skip it if images go straight to a vision model; PDF/Word/PPT need DeepSeek OCR ----
-OCR_PROVIDER=openai
-OCR_BASE_URL=http://127.0.0.1:9001
-OCR_MODEL=gpt-4o-mini
-OCR_API_KEY=
+# ---- Attachment parsing: images go to the model; documents are parsed locally ----
+CHAT_LOCAL_IMAGE_PARSER=vision
+CHAT_LOCAL_DOC_PARSER=python
+# For image OCR:
+# CHAT_LOCAL_IMAGE_PARSER=openai
+# OCR_OPENAI_BASE_URL=http://127.0.0.1:9001
+# OCR_OPENAI_MODEL=gpt-4o-mini
+# OCR_OPENAI_API_KEY=
+# For DeepSeek OCR (documents or images):
+# OCR_DEEPSEEK_API_KEY=...
 
 # ---- read-aloud ----
 TTS_PROVIDER=openai
@@ -85,7 +90,7 @@ Every block can be deleted on its own: the corresponding feature disappears from
 
 ### Example 3: one DeepSeek key (`.env` only)
 
-This shortcut works **only from `.env` or system environment variables**; the first-run wizard has no "DeepSeek key" field. Wizard users must pick `deepseek` in the LLM, voice and OCR blocks and paste the key three times — or just use `.env`.
+This shortcut works **only from `.env` or system environment variables**; the first-run wizard has no "DeepSeek key" field. Wizard users must pick `deepseek` in the LLM, voice and attachment-parsing blocks and paste the key three times — or just use `.env`.
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx
@@ -97,7 +102,7 @@ What happens automatically:
 
 - LLM → `https://api.deepseek.com/anthropic` with model `deepseek-flash` (with `LLM_PROVIDER=openai` the default base becomes `https://api.deepseek.com`, the OpenAI-compatible endpoint);
 - voice input → DeepSeek `/v1/tools/asr`;
-- OCR → DeepSeek `/v1/tools/ocr` (documents and images);
+- Attachment parsing → DeepSeek `/v1/tools/ocr` (documents and images);
 - read-aloud → only after you set `TTS_PROVIDER=deepseek` (URL and key are reused).
 
 **Search is not enabled by this key.** In the self-hosted backend, web search runs through the local tool loop, so you must configure `SEARCH_PROVIDER` (Tavily / AnySearch / SearXNG) yourself; only DeepSeek Cloud mode uses server-side search.

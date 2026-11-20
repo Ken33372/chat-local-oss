@@ -15,7 +15,9 @@ export type SetupStatus = {
   }
   search: { provider: string; base_url: string; has_key: boolean; results: number }
   asr: { provider: string; base_url: string; has_key: boolean; model: string }
-  ocr: { provider: string; base_url: string; has_key: boolean; model: string }
+  parsing: { image: string; document: string }
+  ocr_openai: { base_url: string; has_key: boolean; model: string }
+  ocr_deepseek: { base_url: string; has_key: boolean; model: string }
   rerank: { provider: string; base_url: string; has_key: boolean; model: string }
   embedding: {
     provider: string
@@ -61,7 +63,9 @@ export type SetupBody = {
   }
   search: { provider: string; base_url: string; api_key: string | null; results: number }
   asr: { provider: string; base_url: string; api_key: string | null; model: string }
-  ocr: { provider: string; base_url: string; api_key: string | null; model: string }
+  parsing: { image: string; document: string }
+  ocr_openai: { base_url: string; api_key: string | null; model: string }
+  ocr_deepseek: { base_url: string; api_key: string | null; model: string }
   rerank: { provider: string; base_url: string; api_key: string | null; model: string }
   embedding: {
     provider: string

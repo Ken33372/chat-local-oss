@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { IconEditOutline16, IconTrashOutline16 } from '../base/icons.js'
+import { IconCloseOutline16, IconEditOutline16, IconTrashOutline16 } from '../base/icons.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
@@ -14,6 +14,8 @@ import {
   clearMemories,
   deleteMemory,
   exportMemories,
+  loadTidy,
+  mergeMemories,
   importMemories,
   loadMemoryItems,
   loadProposals,
@@ -24,6 +26,7 @@ import {
   type MemoryItem,
   type MemoryProposal,
   type MemorySettings,
+  type MemoryTidyPair,
 } from '../../services/memory.js'
 import styles from './Settings.module.css'
 
@@ -52,14 +55,19 @@ export const MemorySettingsPanel = () => {
   const [settings, setSettings] = useState<MemorySettings | null>(null)
   const [items, setItems] = useState<MemoryItem[]>([])
   const [proposals, setProposals] = useState<MemoryProposal[]>([])
-  const [editor, setEditor] = useState<{ id: number | null; text: string; pinned: boolean } | null>(
-    null
-  )
+  const [editor, setEditor] = useState<{
+    id: number | null
+    text: string
+    description: string
+    pinned: boolean
+  } | null>(null)
   const [limits, setLimits] = useState({ text: 100, items: 200 })
   const [embeddingReady, setEmbeddingReady] = useState(false)
   const [embeddingError, setEmbeddingError] = useState('')
   const [busy, setBusy] = useState(false)
   const [clearArmed, setClearArmed] = useState(false)
+  const [tidy, setTidy] = useState<MemoryTidyPair[]>([])
+  const [tidyBusy, setTidyBusy] = useState(false)
   const refreshPending = useMemoryStore((state) => state.refresh)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -124,11 +132,16 @@ export const MemorySettingsPanel = () => {
     setBusy(true)
     try {
       if (editor.id === null) {
-        const item = await addMemory(editor.text.trim(), editor.pinned)
+        const item = await addMemory(editor.text.trim(), editor.pinned, editor.description.trim())
         setItems((current) => [item, ...current])
         showToast({ key: 'memoryAdded' })
       } else {
-        const updated = await updateMemory(editor.id, editor.text.trim(), editor.pinned)
+        const updated = await updateMemory(
+          editor.id,
+          editor.text.trim(),
+          editor.pinned,
+          editor.description.trim()
+        )
         setItems((current) => current.map((row) => (row.id === updated.id ? updated : row)))
       }
       setEditor(null)
@@ -152,6 +165,34 @@ export const MemorySettingsPanel = () => {
     try {
       await deleteMemory(id)
       setItems((current) => current.filter((item) => item.id !== id))
+    } catch (error) {
+      fail(error)
+    }
+  }
+
+  const runTidy = async () => {
+    setTidyBusy(true)
+    try {
+      const pairs = await loadTidy()
+      setTidy(pairs)
+      if (pairs.length === 0) {
+        showToast({ key: 'memoryTidyEmpty' })
+      }
+    } catch (error) {
+      fail(error)
+    } finally {
+      setTidyBusy(false)
+    }
+  }
+
+  const merge = async (keep: number, drop: number) => {
+    try {
+      await mergeMemories(keep, drop)
+      setTidy((current) =>
+        current.filter((pair) => pair.a.id !== drop && pair.b.id !== drop)
+      )
+      setItems(await loadMemoryItems())
+      showToast({ key: 'memoryTidyMerged' })
     } catch (error) {
       fail(error)
     }
@@ -251,7 +292,15 @@ export const MemorySettingsPanel = () => {
           <div className={styles.memoryList}>
             {proposals.map((proposal) => (
               <div key={proposal.id} className={clsx(styles.memoryRow, styles.memoryRowPending)}>
-                <span className={styles.memoryText}>{proposal.text}</span>
+                <div className={styles.memoryProposalBody}>
+                  {proposal.kind === 'edit' && proposal.oldText ? (
+                    <span className={styles.memoryTextOld}>{proposal.oldText}</span>
+                  ) : null}
+                  <span className={styles.memoryText}>{proposal.text}</span>
+                  {proposal.description ? (
+                    <span className={styles.memoryDescription}>{proposal.description}</span>
+                  ) : null}
+                </div>
                 <div className={styles.memoryActions}>
                   <Button size="m" variant="outlined" onClick={() => void accept(proposal.id)}>
                     {t('memoryAccept')}
@@ -361,6 +410,51 @@ export const MemorySettingsPanel = () => {
         </details>
       ) : null}
 
+      {tidy.length > 0 ? (
+        <div className={styles.memorySection}>
+          <div className={styles.memorySectionTitle}>
+            {t('memoryTidyTitle')} · {tidy.length}
+          </div>
+          <div className={styles.memoryHint}>{t('memoryTidyHint')}</div>
+          <div className={styles.memoryList}>
+            {tidy.map((pair) => (
+              <div
+                key={`${pair.a.id}-${pair.b.id}`}
+                className={clsx(styles.memoryRow, styles.memoryRowPending)}
+              >
+                <div className={styles.memoryProposalBody}>
+                  <span className={styles.memoryText}>{pair.a.text}</span>
+                  <span className={styles.memoryTextOld}>{pair.b.text}</span>
+                  <span className={styles.memoryHint}>
+                    {t('memoryTidyScore', { score: Math.round(pair.score * 100) })}
+                  </span>
+                </div>
+                <div className={styles.memoryActions}>
+                  <Button size="m" variant="outlined" onClick={() => void merge(pair.a.id, pair.b.id)}>
+                    {t('memoryTidyKeepA')}
+                  </Button>
+                  <Button size="m" variant="outlined" onClick={() => void merge(pair.b.id, pair.a.id)}>
+                    {t('memoryTidyKeepB')}
+                  </Button>
+                  <button
+                    type="button"
+                    className={styles.memoryIconButton}
+                    title={t('memoryTidySkip')}
+                    onClick={() =>
+                      setTidy((current) =>
+                        current.filter((item) => item !== pair)
+                      )
+                    }
+                  >
+                    <IconCloseOutline16 />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className={styles.memorySection}>
         <div className={styles.memorySectionHeader}>
           <div className={styles.memorySectionTitle}>
@@ -369,14 +463,24 @@ export const MemorySettingsPanel = () => {
               {items.length} / {limits.items}
             </span>
           </div>
-          <Button
-            size="s"
-            variant="outlined"
-            disabled={items.length >= limits.items}
-            onClick={() => setEditor({ id: null, text: '', pinned: false })}
-          >
-            {t('memoryAdd')}
-          </Button>
+          <div className={styles.memoryActions}>
+            <Button
+              size="s"
+              variant="outlined"
+              disabled={items.length < 2 || tidyBusy}
+              onClick={() => void runTidy()}
+            >
+              {t('memoryTidy')}
+            </Button>
+            <Button
+              size="s"
+              variant="outlined"
+              disabled={items.length >= limits.items}
+              onClick={() => setEditor({ id: null, text: '', description: '', pinned: false })}
+            >
+              {t('memoryAdd')}
+            </Button>
+          </div>
         </div>
         <div className={styles.memoryHint}>
           {t('memoryLimits', { text: limits.text, items: limits.items })}
@@ -395,13 +499,25 @@ export const MemorySettingsPanel = () => {
                 >
                   {item.pinned ? t('memoryPinned') : t('memoryPin')}
                 </button>
-                <span className={styles.memoryText}>{item.text}</span>
+                <div className={styles.memoryProposalBody}>
+                  <span className={styles.memoryText}>{item.text}</span>
+                  {item.description ? (
+                    <span className={styles.memoryDescription}>{item.description}</span>
+                  ) : null}
+                </div>
                 <div className={styles.memoryActions}>
                   <button
                     type="button"
                     className={styles.memoryIconButton}
                     title={t('memoryEdit')}
-                    onClick={() => setEditor({ id: item.id, text: item.text, pinned: item.pinned })}
+                    onClick={() =>
+                      setEditor({
+                        id: item.id,
+                        text: item.text,
+                        description: item.description ?? '',
+                        pinned: item.pinned,
+                      })
+                    }
                   >
                     <IconEditOutline16 />
                   </button>
@@ -459,6 +575,16 @@ export const MemorySettingsPanel = () => {
             </div>
           }
         >
+          <div className={styles.promptField}>
+            <span className={styles.promptFieldLabel}>{t('memoryDescription')}</span>
+            <input
+              className={styles.promptInput}
+              value={editor.description}
+              maxLength={30}
+              placeholder={t('memoryDescriptionPlaceholder')}
+              onChange={(event) => setEditor({ ...editor, description: event.target.value })}
+            />
+          </div>
           <textarea
             className={styles.memoryTextarea}
             autoFocus

@@ -57,7 +57,6 @@ PORT = _int_env("CHAT_LOCAL_PORT", 17865)
 MAX_TOOL_ROUNDS = _int_env("CHAT_LOCAL_MAX_TOOL_ROUNDS", 5)
 MAX_TOOL_RESULT_CHARS = _int_env("CHAT_LOCAL_MAX_TOOL_RESULT_CHARS", 12000)
 MAX_IMAGE_BYTES = _int_env("CHAT_LOCAL_MAX_IMAGE_BYTES", 20 * 1024 * 1024)
-IMAGE_MODE = _env("CHAT_LOCAL_IMAGE_MODE", "vision").lower()
 DEFAULT_SYSTEM = "该助手由用户自行配置的模型提供。"
 
 _saved: dict = {}
@@ -130,7 +129,10 @@ def _compute() -> dict:
     llm = _block("llm")
     search = _block("search")
     asr = _block("asr")
-    ocr = _block("ocr")
+    ocr_legacy = _block("ocr")
+    ocr_openai = _block("ocr_openai")
+    ocr_deepseek = _block("ocr_deepseek")
+    parsing = _block("parsing")
 
     llm_provider = _pick("LLM_PROVIDER", llm.get("provider"), "anthropic").lower()
     if llm_provider in ("openai-compatible", "openai_compatible", "openai兼容"):
@@ -173,16 +175,43 @@ def _compute() -> dict:
     )
     asr_model = _pick("ASR_MODEL", asr.get("model"), "whisper-1")
 
-    ocr_provider = _pick(
-        "OCR_PROVIDER", ocr.get("provider"), "deepseek" if deepseek_key else "none"
-    ).lower()
-    ocr_base = _pick(
-        "OCR_BASE_URL", ocr.get("base_url"), _default_base(ocr_provider, deepseek_key)
-    ).rstrip("/")
-    ocr_key = _pick(
-        "OCR_API_KEY", ocr.get("api_key"), deepseek_key if ocr_provider == "deepseek" else ""
+    # 附件解析：图片与文档各选一种方式；两套 OCR 凭据分开存
+    legacy_ocr_provider = _pick("OCR_PROVIDER", ocr_legacy.get("provider"), "").lower()
+    image_parser = _pick("CHAT_LOCAL_IMAGE_PARSER", parsing.get("image"), "").lower()
+    if not image_parser:
+        # 旧配置没存图片方式：沿用 CHAT_LOCAL_IMAGE_MODE（默认 vision）
+        legacy_image_mode = _env("CHAT_LOCAL_IMAGE_MODE", "vision").lower()
+        image_parser = (
+            legacy_ocr_provider
+            if legacy_image_mode == "ocr" and legacy_ocr_provider in ("openai", "deepseek")
+            else "vision"
+        )
+    if image_parser not in ("vision", "openai", "deepseek"):
+        image_parser = "vision"
+    doc_parser = _pick("CHAT_LOCAL_DOC_PARSER", parsing.get("document"), "").lower()
+    if not doc_parser:
+        doc_parser = "deepseek" if legacy_ocr_provider == "deepseek" else "python"
+    if doc_parser not in ("python", "deepseek"):
+        doc_parser = "python"
+
+    def _ocr_profile(name: str, saved: dict, default_model: str) -> tuple[str, str, str]:
+        legacy = ocr_legacy if legacy_ocr_provider == name else {}
+        base = _pick(
+            f"OCR_{name.upper()}_BASE_URL", saved.get("base_url"), legacy.get("base_url", "")
+        )
+        fallback_key = legacy.get("api_key") or (deepseek_key if name == "deepseek" else "")
+        key = _pick(f"OCR_{name.upper()}_API_KEY", saved.get("api_key"), fallback_key)
+        model = _pick(f"OCR_{name.upper()}_MODEL", saved.get("model"), legacy.get("model", default_model))
+        return base.rstrip("/"), key, model
+
+    ocr_openai_base, ocr_openai_key, ocr_openai_model = _ocr_profile(
+        "openai", ocr_openai, "gpt-4o-mini"
     )
-    ocr_model = _pick("OCR_MODEL", ocr.get("model"), "gpt-4o-mini")
+    ocr_deepseek_base, ocr_deepseek_key, ocr_deepseek_model = _ocr_profile(
+        "deepseek", ocr_deepseek, ""
+    )
+    if not ocr_deepseek_base and (ocr_deepseek_key or deepseek_key):
+        ocr_deepseek_base = "https://api.deepseek.com"
 
     # 朗读：仅自建后端使用；云端模式的朗读走 DeepSeek 官方工具接口，不看这几项
     tts = _block("tts")
@@ -234,6 +263,13 @@ def _compute() -> dict:
     except ValueError:
         memory_inject_count = 5
     memory_inject_count = max(1, min(10, memory_inject_count))
+    try:
+        memory_sim_threshold = float(
+            _pick("CHAT_LOCAL_MEMORY_SIM_THRESHOLD", mem.get("sim_threshold"), "0.42")
+        )
+    except ValueError:
+        memory_sim_threshold = 0.42
+    memory_sim_threshold = max(0.0, min(1.0, memory_sim_threshold))
     memory_tools = _flag("CHAT_LOCAL_MEMORY_TOOLS", mem.get("tools"), True)
     memory_write = _pick("CHAT_LOCAL_MEMORY_WRITE", mem.get("write"), "propose").lower()
     if memory_write not in ("propose", "off"):
@@ -278,10 +314,14 @@ def _compute() -> dict:
         "ASR_BASE_URL": asr_base,
         "ASR_API_KEY": asr_key,
         "ASR_MODEL": asr_model,
-        "OCR_PROVIDER": ocr_provider,
-        "OCR_BASE_URL": ocr_base,
-        "OCR_API_KEY": ocr_key,
-        "OCR_MODEL": ocr_model,
+        "IMAGE_PARSER": image_parser,
+        "DOC_PARSER": doc_parser,
+        "OCR_OPENAI_BASE_URL": ocr_openai_base,
+        "OCR_OPENAI_API_KEY": ocr_openai_key,
+        "OCR_OPENAI_MODEL": ocr_openai_model,
+        "OCR_DEEPSEEK_BASE_URL": ocr_deepseek_base,
+        "OCR_DEEPSEEK_API_KEY": ocr_deepseek_key,
+        "OCR_DEEPSEEK_MODEL": ocr_deepseek_model,
         "TTS_PROVIDER": tts_provider,
         "TTS_BASE_URL": tts_base,
         "TTS_API_KEY": tts_key,
@@ -323,6 +363,7 @@ def _compute() -> dict:
         "MEMORY_INJECT_MODE": memory_inject_mode,
         "MEMORY_SEARCH_MODE": memory_search_mode,
         "MEMORY_INJECT_COUNT": memory_inject_count,
+        "MEMORY_SIM_THRESHOLD": memory_sim_threshold,
         "MEMORY_TOOLS": memory_tools,
         "MEMORY_WRITE": memory_write,
     }
@@ -349,7 +390,12 @@ def capabilities() -> dict:
         "llm": bool(LLM_BASE_URL and LLM_MODEL),
         "search": search_ready,
         "asr": ASR_PROVIDER in ("deepseek", "openai") and bool(ASR_BASE_URL),
-        "ocr": OCR_PROVIDER in ("deepseek", "openai") and bool(OCR_BASE_URL),
+        "ocr": bool(
+            DOC_PARSER == "python"
+            or (IMAGE_PARSER == "openai" and OCR_OPENAI_BASE_URL)
+            or (IMAGE_PARSER == "deepseek" and OCR_DEEPSEEK_BASE_URL)
+            or (DOC_PARSER == "deepseek" and OCR_DEEPSEEK_BASE_URL)
+        ),
         "tts": (TTS_PROVIDER in ("deepseek", "openai", "engine") and bool(TTS_BASE_URL))
         or (TTS_PROVIDER == "template" and bool(TTS_TEMPLATE_URL or TTS_BASE_URL)),
         "memory": bool(MEMORY_ENABLED),

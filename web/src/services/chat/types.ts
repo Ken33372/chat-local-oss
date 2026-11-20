@@ -94,7 +94,7 @@ export type AssistantMessage = MessageBranch & {
   usage?: MessageUsage
   /** 本机后端的记忆提示（注入/查询/写入），只用于展示 */
   memoryNotices?: {
-    action: 'inject' | 'search' | 'remember'
+    action: 'inject' | 'search' | 'remember' | 'edit'
     count: number
     ok?: boolean
   }[]

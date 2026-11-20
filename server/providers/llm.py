@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import AsyncGenerator
 from urllib.parse import urlsplit
@@ -35,6 +36,9 @@ class LLMError(RuntimeError):
 def normalize_provider(value: object) -> str:
     text = str(value or "").strip().lower()
     return "openai" if text in _OPENAI_ALIASES else "anthropic"
+
+
+_log = logging.getLogger("llm")
 
 
 def provider() -> str:
@@ -399,6 +403,7 @@ async def _stream_openai(payload: dict, context: dict) -> AsyncGenerator[dict, N
     url = messages_url(config.LLM_BASE_URL, "openai")
     body = to_openai(payload)
     body.update(extra_body())
+    _log.info("llm request openai model=%s messages=%d", config.LLM_MODEL, len(body.get("messages") or []))
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(None, connect=15)) as client:
         async with client.stream(
             "POST", url, json=body, headers=headers("openai", config.LLM_API_KEY, config.LLM_HEADERS, context)
@@ -522,12 +527,14 @@ async def _read_openai_stream(response: httpx.Response) -> AsyncGenerator[dict, 
 async def _stream_anthropic(payload: dict, context: dict) -> AsyncGenerator[dict, None]:
     url = messages_url(config.LLM_BASE_URL, "anthropic")
     body = {**payload, **extra_body()}
+    _log.info("llm request anthropic model=%s messages=%d", config.LLM_MODEL, len(body.get("messages") or []))
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(None, connect=15)) as client:
         async with client.stream(
             "POST", url, json=body, headers=headers("anthropic", config.LLM_API_KEY, config.LLM_HEADERS, context)
         ) as response:
             if response.status_code != 200:
                 raw = (await response.aread()).decode("utf-8", errors="replace")
+                _log.warning("llm http %s: %s", response.status_code, raw[:200])
                 raise LLMError(f"模型接口返回 {response.status_code}：{raw[:400]}")
             async for line in response.aiter_lines():
                 if not line.startswith("data:"):

@@ -16,7 +16,6 @@ LLM_FIELDS = ("base_url", "api_key", "model", "context_limit", "max_output_token
 PROVIDER_BLOCKS = {
     "search": ("provider", "base_url", "api_key", "results"),
     "asr": ("provider", "base_url", "api_key", "model"),
-    "ocr": ("provider", "base_url", "api_key", "model"),
     # 重排只在搜索走 SearXNG 时起作用，配置项与其他自建后端同构
     "rerank": ("provider", "base_url", "api_key", "model"),
     # 朗读多两个字段：音色名与返回容器（wav/mp3/opus/pcm）
@@ -136,6 +135,49 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
         "tools": _bool(memory.get("tools"), old_memory.get("tools"), True),
         "write": write,
     }
+    # 附件解析：图片/文档各选一种方式；OpenAI 兼容与 DeepSeek 两套凭据分开存
+    parsing = body.get("parsing") if isinstance(body.get("parsing"), dict) else {}
+    old_parsing = previous.get("parsing") if isinstance(previous.get("parsing"), dict) else {}
+    legacy_old = previous.get("ocr") if isinstance(previous.get("ocr"), dict) else {}
+    legacy_body = body.get("ocr") if isinstance(body.get("ocr"), dict) else {}
+    legacy_provider = (
+        _text(legacy_body.get("provider"), 32).lower()
+        or _text(legacy_old.get("provider"), 32).lower()
+    )
+    image_mode = (
+        _text(parsing.get("image"), 16).lower() or _text(old_parsing.get("image"), 16).lower()
+    )
+    if not image_mode:
+        # 旧配置默认图片跟随模型；要 OCR 需在新界面明确选择
+        image_mode = "vision" 
+    if image_mode not in ("vision", "openai", "deepseek"):
+        raise ValueError("图片解析方式只能是 vision / openai / deepseek")
+    doc_mode = (
+        _text(parsing.get("document"), 16).lower()
+        or _text(old_parsing.get("document"), 16).lower()
+    )
+    if not doc_mode:
+        doc_mode = "deepseek" if legacy_provider == "deepseek" else "python"
+    if doc_mode not in ("python", "deepseek"):
+        raise ValueError("文档解析方式只能是 python / deepseek")
+    result["parsing"] = {"image": image_mode, "document": doc_mode}
+    for name, provider_name in (("ocr_openai", "openai"), ("ocr_deepseek", "deepseek")):
+        supplied = body.get(name) if isinstance(body.get(name), dict) else {}
+        old = previous.get(name) if isinstance(previous.get(name), dict) else {}
+        source = supplied or old
+        if not source:
+            if legacy_body and _text(legacy_body.get("provider"), 32).lower() == provider_name:
+                source = legacy_body
+            elif _text(legacy_old.get("provider"), 32).lower() == provider_name:
+                source = legacy_old
+        base_value = _text(source.get("base_url")).rstrip("/")
+        if base_value and not base_value.startswith(("http://", "https://")):
+            raise ValueError(f"{name.upper()}_BASE_URL 必须以 http:// 或 https:// 开头")
+        result[name] = {
+            "base_url": base_value,
+            "api_key": _key(supplied.get("api_key") if supplied else None, source.get("api_key")),
+            "model": _text(source.get("model"), 200),
+        }
     return result
 
 

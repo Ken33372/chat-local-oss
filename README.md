@@ -63,7 +63,7 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 ### 第一次打开
 
-还没配置时，首次打开会出现配置向导：**DeepSeek 云端**填 API Key 即可；**自建后端**先选接口协议（Anthropic 兼容 / OpenAI 兼容），再填 Base URL、API Key、模型名，高级里再配搜索、ASR、OCR、朗读。保存后立即生效。
+还没配置时，首次打开会出现分步向导：先选 **DeepSeek 云端**（填 Key 即完成，会直接跳到数据管理）或 **自定义后端**；自定义依次配置模型 → 可选功能（搜索、附件解析、语音、重排与向量），模型配完后可勾选需要哪些功能，后续每一步都能跳过。保存后立即生效。
 
 已经用 `.env` 配好的可以直接跳过向导。两种配置来源的优先级、向导入口和全部变量见下方 [配置](#配置)。
 
@@ -90,7 +90,7 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 | 变量 | 说明 |
 |---|---|
-| `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR、OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
+| `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR 与 DeepSeek 版 OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
 | `LLM_PROVIDER` | `anthropic`（默认，`POST /v1/messages`）/ `openai`（`POST /v1/chat/completions`，可接 Ollama、LM Studio、vLLM 等）。两种协议下搜索、引用、思考、附件、标题、压缩行为一致，细节见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#对话模型的两条协议) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的模型接口；Anthropic 兼容填 `/anthropic` 这类前缀或完整的 `/v1/messages` 地址，OpenAI 兼容填根地址、`/v1` 结尾或完整接口地址 |
 | `LLM_HEADERS` | 额外请求头，JSON 对象。占位符：`{key}` 引用 `LLM_API_KEY`，`{session}` 是当前对话 ID（形如 `ses_...`），`{model}` 是模型名。用于 Azure 自定义鉴权、身份声明和会话 ID（例如 `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`）；自定义头会覆盖同名默认头 |
@@ -98,8 +98,10 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址或以 `/v1` 结尾的地址（含 `/api/v1` 前缀）自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
-| `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | 文档/图片识别；OpenAI 兼容接口只支持图片。根地址自动接 `/v1/chat/completions`，填完整地址原样请求 |
+| `CHAT_LOCAL_IMAGE_PARSER` | `vision`（跟随模型，默认）/ `openai` / `deepseek`：图片解析方式。被模型拒绝时自动回退 OCR |
+| `CHAT_LOCAL_DOC_PARSER` | `python`（默认）/ `deepseek`：文档解析方式。`python` 在本地抽 PDF/docx/pptx 的文字层；抽不出（扫描件）再回退 DeepSeek OCR（若已配置） |
+| `OCR_OPENAI_BASE_URL` / `OCR_OPENAI_API_KEY` / `OCR_OPENAI_MODEL` | 图片选 `openai` 时用；只处理图片，根地址自动接 `/v1/chat/completions` |
+| `OCR_DEEPSEEK_BASE_URL` / `OCR_DEEPSEEK_API_KEY` / `OCR_DEEPSEEK_MODEL` | 图片或文档选 `deepseek` 时用；地址留空默认 `https://api.deepseek.com` |
 | `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`；不配就没有朗读按钮 |
 | `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` | 朗读接口。`deepseek` 可省略地址、复用 `DEEPSEEK_API_KEY`；`openai` 是 OpenAI 兼容的 `/v1/audio/speech`，自建引擎填服务根地址（默认模型名 `tts-1`）。地址里已经带路径（例如 `http://host:8090/api/tts/speech`）就原样请求，不再追加标准路径 |
 | `TTS_VOICE` | 音色名，留空用服务默认（DeepSeek：`stella`；OpenAI：`alloy`） |
@@ -112,24 +114,24 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 | `EMBEDDING_PROVIDER` / `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` | 可选的向量接口（OpenAI 兼容 `/v1/embeddings`），只给记忆的「高级检索」用。`EMBEDDING_DIM` 必须与模型一致（Qwen3-Embedding-0.6B 为 1024）；模型或维度变化会重算全部向量。没配或调用失败时自动回退本地打分。注意：高级检索每轮多一次向量请求，配了重排再多一次（本机实测约 1–2 秒）。 |
 | `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG 翻页聚合的调优项，默认 20 / 60 / 5 / 500 |
 | `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | 站点规则，逗号分隔。写 `example.com` 连子域一起算，写 `example.com/docs` 再限定路径前缀 |
-| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`。默认 `vision`，直接把图片发给模型，**要求模型支持视觉/多模态**；`auto` 先发图，被拒时自动回退 OCR；`ocr` 只做 OCR、不发图。**模型不支持多模态时请设为 `auto` 或 `ocr`，否则发图会收到上游报错。** |
+| `CHAT_LOCAL_IMAGE_MODE` | 旧变量，仅用于迁移：没写 `CHAT_LOCAL_IMAGE_PARSER` 时，`ocr` 会映射到旧 OCR 服务，其余按 `vision` 处理。新配置请用 `CHAT_LOCAL_IMAGE_PARSER` |
 
 没配置的能力会从界面上隐藏（例如没有 ASR 就不显示麦克风），不会出现点了必然报错的按钮。
 
 ### 更多细节
 
-- 两个可直接照抄的配置示例、朗读/ASR/OCR/重排的接口兼容说明：[docs/providers.zh-CN.md](docs/providers.zh-CN.md)
+- 两个可直接照抄的配置示例、朗读/ASR/附件解析/重排的接口兼容说明：[docs/providers.zh-CN.md](docs/providers.zh-CN.md)
 - SearXNG 的结果质量、重排开关、翻页聚合与实测耗时：[docs/search.zh-CN.md](docs/search.zh-CN.md)
 
 ## 功能
 
 ### 自建后端逐项自定义
 
-LLM、搜索、ASR、OCR 分别配置，互不绑定：
+LLM、搜索、ASR、附件解析分别配置，互不绑定：
 
 - **LLM**：模型名、Base URL、API Key、上下文上限和单次最大输出都由你填写；协议可选 Anthropic 兼容（例如 DeepSeek 的 `/anthropic` 端点）或 OpenAI 兼容（Ollama、LM Studio、vLLM、各家云服务）。
 - **ASR**：可选 DeepSeek `/v1/tools/asr` 或 OpenAI 兼容 `/v1/audio/transcriptions`。
-- **OCR**：可选 DeepSeek `/v1/tools/ocr`（文档与图片）或 OpenAI 兼容视觉接口（仅图片）。
+- **附件解析**：图片可选「跟随模型 / OpenAI 兼容 OCR / DeepSeek」；文档可选「Python 文本解析 / DeepSeek」。Python 解析在本地抽 PDF/docx/pptx 的文字层，不花 OCR 费用；扫描件自动回退 DeepSeek OCR（若已配置）。
 - **搜索**：可选 Tavily、AnySearch、SearXNG，或直接关闭。SearXNG 可以再挂自己的重排模型，开启多页聚合与相关性排序；不配就只取一页。
 - 未配置的能力会自动隐藏。
 
@@ -146,12 +148,15 @@ LLM、搜索、ASR、OCR 分别配置，互不绑定：
 - **上下文管理**：用量提示、本地压缩，以及可配置的上下文上限和单次最大输出。云端模式只有用量提示，上限由 DeepSeek 固定。
 - **自动生成标题**：可选，默认关闭。首轮回复完成后，本地后端用第一条用户消息和助手正文额外请求一次模型生成标题；云端继续使用 DeepSeek 自带标题。
 - **工具轮数**：界面可调一次回答里的最大联网工具轮数。云端由 DeepSeek 服务端决定，前端不发送该参数。
-- **长期记忆（仅自建后端，默认关闭）**：设置 → 记忆。记忆存在本机 `chat.db`，每次对话按「置顶+最近 / 本地关键词 / 向量（可选重排）」三档之一注入若干条；模型可查询、可提议写入，提议要你逐条确认才生效；支持导出为 txt 与导入 txt/JSON（重复条目自动跳过）。角色卡、自定义 system 提示与自动会话摘要尚未实现。注入规则、开关与上限见 [docs/context.zh-CN.md](docs/context.zh-CN.md)。
+- **长期记忆（仅自建后端，默认关闭）**：设置 → 记忆。记忆存在本机 `chat.db`，每次对话按「置顶+最近 / 本地关键词 / 向量（可选重排）」三档之一注入若干条；模型可查询、可提议写入或修改，提议要你逐条确认才生效；每条可带一行说明用于检索匹配，支持手动整理近似条目；支持导出为 txt 与导入 txt/JSON（重复条目自动跳过）。自动会话摘要尚未实现。注入规则、开关与上限见 [docs/context.zh-CN.md](docs/context.zh-CN.md)。
+
+- **提示词（角色卡）**：设置 → 提示词。命名卡片 + 全局生效一张，正文只追加在内置规则之后；最多 30 张、每张 8000 字，存在 `data/prompts.json`。
 
 ### 界面与配置
 
 - **首次运行向导**：两种模式都能进入，但只负责写自建后端的配置。高级里常驻两组输入：重排（Base URL / API Key / 模型名，搜索与记忆高级检索共用）和 Embedding（地址 / Key / 模型 / 维度，只给记忆高级检索用）；还能配朗读的 provider、地址、key、模型、音色与返回格式。
 - **能力探测**：没配置的搜索、ASR 等入口自动隐藏。
+- **调试面板**：侧栏标题 1.5 秒内连点 5 次打开。状态页看各服务和向量库的配置与覆盖情况，日志页看后端最近 800 行（含请求与耗时），探针页会真实请求一次 LLM / Embedding / Rerank / 搜索 / 记忆检索 / 语音输入 / 朗读并显示结果与耗时。
 - **界面修复**：深色模式下拉框、会话菜单定位、清理统计等问题。
 
 ## 能力对照
@@ -162,15 +167,15 @@ LLM、搜索、ASR、OCR 分别配置，互不绑定：
 | 联网搜索、读网页 | DeepSeek 服务端工具，工具本身不计费 | 你配置的搜索 provider |
 | 语音输入 | DeepSeek `/v1/tools/asr` | `deepseek` 或 OpenAI 兼容 ASR |
 | 朗读 | DeepSeek `/v1/tools/tts` | `deepseek` 或 OpenAI 兼容 `/v1/audio/speech` |
-| 图片 | 直传 DeepSeek | 直接发视觉；失败可回退 OCR |
-| PDF/Word/PPT | DeepSeek Files API | DeepSeek OCR 或关闭 |
+| 图片 | 直传 DeepSeek | 跟随模型 / OpenAI 兼容 OCR / DeepSeek |
+| PDF/Word/PPT | DeepSeek Files API | Python 文本解析 / DeepSeek OCR |
 
 自建朗读支持四种接口形状（`openai` / `deepseek` / `engine` / `template`），覆盖常见自建 TTS 服务；四种形状的对照表、`template` 的四项配置和明确不支持的服务类型（如 ComfyUI 异步工作流）见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#朗读的四种接口形状)。
 
 ## 限制
 
 - 本项目未经过广泛测试，详见上面的「项目状态」。
-- OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 请用 DeepSeek OCR 或先转图片。
+- OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 默认本地解析，扫描件需要 DeepSeek OCR，老 `.doc` 请先另存为 `.docx`。
 - 导入/导出目前只支持 DeepSeek 导出格式。
 - 朗读（云端与自建）都未做真机试听验证，属于「未经过广泛测试」的范围；自建朗读能不能出声，取决于你接的服务是否实现了 `/v1/audio/speech`。
 - SearXNG 的两类已知问题（Brave 跳转链、上游引擎限流）见 [docs/search.zh-CN.md](docs/search.zh-CN.md#已知的两类脏数据)。

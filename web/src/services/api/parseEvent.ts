@@ -226,7 +226,7 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
       break
     case 'memory_notice':
       if (
-        !['inject', 'search', 'remember'].includes(value.action as string) ||
+        !['inject', 'search', 'remember', 'edit'].includes(value.action as string) ||
         !isIndex(value.count)
       ) {
         return null

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -239,8 +240,8 @@ def _search_anysearch(query: str, limit: int, allow: list[str], block: list[str]
 # ---------------- searxng（自建，无 key） ----------------
 
 
-def _searxng_page(query: str, page: int) -> list[dict]:
-    with client(60) as http:
+def _searxng_page(query: str, page: int, timeout: float = 60) -> list[dict]:
+    with client(timeout) as http:
         response = http.get(
             join(_base(), "/search"),
             params={"q": query, "format": "json", "language": "auto", "pageno": str(page)},
@@ -419,18 +420,34 @@ def extract(url: str, max_chars: int = 8000) -> dict:
 
 
 def _searxng_probe() -> dict:
+    """存活探针走 /config：毫秒级返回；真搜索要先等各引擎超时，至少 5 秒。"""
     base = _base()
     ok = False
     error = ""
+    engines = 0
     try:
-        with client(5) as http:
-            response = http.get(join(base, "/search"), params={"q": "ping", "format": "json"})
+        with client(3) as http:
+            response = http.get(join(base, "/config"))
         ok = response.status_code == 200
         if not ok:
             error = f"HTTP {response.status_code}"
+        else:
+            body = response.json()
+            engines = len([item for item in body.get("engines") or [] if item.get("enabled")])
     except Exception as exc:
         error = type(exc).__name__
-    return {"ok": ok, "base": base, "error": error}
+    return {"ok": ok, "base": base, "error": error, "engines": engines}
+
+
+def probe_query(query: str = "调试探针", timeout: float = 30) -> dict:
+    """调试面板用：单页真实搜索，不做聚合与重排。"""
+    started = time.perf_counter()
+    items = _searxng_page(query, 1, timeout=timeout)
+    return {
+        "ok": True,
+        "count": len(items),
+        "ms": round((time.perf_counter() - started) * 1000),
+    }
 
 
 def _rerank_info() -> dict:
@@ -445,6 +462,17 @@ def _rerank_info() -> dict:
     info["candidate_max"] = config.SEARCH_CANDIDATE_MAX if aggregate else config.SEARCH_RESULTS
     info["pages"] = config.SEARCH_MAX_PAGES if aggregate else 1
     return info
+
+
+def status() -> dict:
+    """调试面板用：不联网，只报配置与重排已有的探测结果。"""
+    return {
+        "provider": _provider(),
+        "available": _available(),
+        "base": _base() if _available() else "",
+        "searxng": _provider() == "searxng",
+        "rerank": dict(rerank_provider.status()),
+    }
 
 
 def health() -> dict:

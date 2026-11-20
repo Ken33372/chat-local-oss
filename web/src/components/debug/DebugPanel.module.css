@@ -1,0 +1,281 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.62);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 94vw);
+  height: min(820px, 88vh);
+  overflow: hidden;
+  color: #d7dee8;
+  background: #0e1116;
+  border: 1px solid #223046;
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1c2634;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6edf7;
+}
+
+.uptime {
+  color: #6b7a90;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #1c2634;
+}
+
+.tab {
+  padding: 3px 12px;
+  color: #8b97a8;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tabActive {
+  color: #e6edf7;
+  background: #16202e;
+  border-color: #2a3648;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 10px;
+}
+
+.card {
+  padding: 8px 10px 10px;
+  background: #121722;
+  border: 1px solid #1c2634;
+  border-radius: 8px;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #93a3b8;
+  letter-spacing: 0.02em;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.rowLabel {
+  flex: 0 0 auto;
+  color: #6b7a90;
+}
+
+.rowValue {
+  min-width: 0;
+  color: #d7dee8;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.good {
+  color: #6ee7a8;
+}
+
+.bad {
+  color: #f87171;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.dotOk {
+  background: #34d399;
+}
+
+.dotWarn {
+  background: #f59e0b;
+}
+
+.dotBad {
+  background: #ef4444;
+}
+
+.hint {
+  color: #6b7a90;
+}
+
+.button {
+  padding: 3px 10px;
+  color: #d7dee8;
+  background: #1b2433;
+  border: 1px solid #2a3648;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.button:disabled {
+  color: #6b7a90;
+  cursor: default;
+}
+
+.select {
+  padding: 2px 6px;
+  color: #d7dee8;
+  background: #1b2433;
+  border: 1px solid #2a3648;
+  border-radius: 6px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.logs {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px;
+  background: #0a0d12;
+  border: 1px solid #1c2634;
+  border-radius: 8px;
+}
+
+.logLine {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #b9c4d4;
+}
+
+.logTime {
+  flex: 0 0 auto;
+  color: #56637a;
+}
+
+.logName {
+  flex: 0 0 96px;
+  color: #7c8aa3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.levelINFO {
+  color: #b9c4d4;
+}
+
+.levelWARNING {
+  color: #fbbf24;
+}
+
+.levelERROR {
+  color: #f87171;
+}
+
+.levelDEBUG {
+  color: #6b7a90;
+}
+
+.probeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.probeButton {
+  padding: 8px 10px;
+  color: #d7dee8;
+  background: #16202e;
+  border: 1px solid #2a3648;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.probeButton:disabled {
+  color: #6b7a90;
+  cursor: default;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resultRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #121722;
+  border: 1px solid #1c2634;
+  border-radius: 8px;
+}
+
+.resultTarget {
+  flex: 0 0 84px;
+  color: #93a3b8;
+}
+
+.resultMs {
+  flex: 0 0 70px;
+  color: #6b7a90;
+}
+
+.resultDetail {
+  min-width: 0;
+  color: #d7dee8;
+  overflow-wrap: anywhere;
+}

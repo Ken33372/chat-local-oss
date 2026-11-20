@@ -353,7 +353,9 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
               notice.count > 0 ? 'memoryStepSearch' : 'memoryStepSearchEmpty',
               { count: notice.count }
             )
-          : translate(notice.ok ? 'memoryStepRememberQueued' : 'memoryStepRememberBlocked'),
+          : notice.action === 'edit'
+            ? translate(notice.ok ? 'memoryStepEditQueued' : 'memoryStepEditBlocked')
+            : translate(notice.ok ? 'memoryStepRememberQueued' : 'memoryStepRememberBlocked'),
     })
   }
   if (injected > 0) {

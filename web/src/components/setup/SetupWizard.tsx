@@ -1,5 +1,6 @@
+import clsx from 'clsx'
 import { useEffect, useState } from 'react'
-import { useTranslate } from '../../i18n/index.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
   loadSetupStatus,
   saveSetup,
@@ -19,6 +20,9 @@ import styles from './SetupWizard.module.css'
 
 const DISMISSED = 'chat-local:setup-dismissed'
 
+type StepKey = 'mode' | 'llm' | 'search' | 'parsing' | 'voice' | 'extra'
+type FeatureKey = 'search' | 'parsing' | 'voice' | 'extra'
+
 type Form = {
   llmProvider: string
   baseUrl: string
@@ -35,10 +39,14 @@ type Form = {
   asrBase: string
   asrKey: string
   asrModel: string
-  ocrProvider: string
-  ocrBase: string
-  ocrKey: string
-  ocrModel: string
+  imageParser: string
+  docParser: string
+  ocrOpenaiBase: string
+  ocrOpenaiKey: string
+  ocrOpenaiModel: string
+  ocrDeepseekBase: string
+  ocrDeepseekKey: string
+  ocrDeepseekModel: string
   rerankBase: string
   rerankKey: string
   rerankModel: string
@@ -70,10 +78,14 @@ const emptyForm: Form = {
   asrBase: '',
   asrKey: '',
   asrModel: 'whisper-1',
-  ocrProvider: 'none',
-  ocrBase: '',
-  ocrKey: '',
-  ocrModel: 'gpt-4o-mini',
+  imageParser: 'vision',
+  docParser: 'python',
+  ocrOpenaiBase: '',
+  ocrOpenaiKey: '',
+  ocrOpenaiModel: 'gpt-4o-mini',
+  ocrDeepseekBase: '',
+  ocrDeepseekKey: '',
+  ocrDeepseekModel: '',
   rerankBase: '',
   rerankKey: '',
   rerankModel: '',
@@ -105,10 +117,14 @@ const formFromStatus = (status: SetupStatus): Form => ({
   asrBase: status.asr.base_url,
   asrKey: '',
   asrModel: status.asr.model,
-  ocrProvider: status.ocr.provider,
-  ocrBase: status.ocr.base_url,
-  ocrKey: '',
-  ocrModel: status.ocr.model,
+  imageParser: status.parsing?.image ?? 'vision',
+  docParser: status.parsing?.document ?? 'python',
+  ocrOpenaiBase: status.ocr_openai?.base_url ?? '',
+  ocrOpenaiKey: '',
+  ocrOpenaiModel: status.ocr_openai?.model ?? 'gpt-4o-mini',
+  ocrDeepseekBase: status.ocr_deepseek?.base_url ?? '',
+  ocrDeepseekKey: '',
+  ocrDeepseekModel: status.ocr_deepseek?.model ?? '',
   rerankBase: status.rerank?.base_url ?? '',
   rerankKey: '',
   rerankModel: status.rerank?.model ?? '',
@@ -153,11 +169,16 @@ const bodyFrom = (form: Form, status: SetupStatus | null): SetupBody => ({
     api_key: keepKey(form.asrKey, status?.asr.has_key ?? false),
     model: form.asrModel.trim(),
   },
-  ocr: {
-    provider: form.ocrProvider,
-    base_url: form.ocrBase.trim(),
-    api_key: keepKey(form.ocrKey, status?.ocr.has_key ?? false),
-    model: form.ocrModel.trim(),
+  parsing: { image: form.imageParser, document: form.docParser },
+  ocr_openai: {
+    base_url: form.ocrOpenaiBase.trim(),
+    api_key: keepKey(form.ocrOpenaiKey, status?.ocr_openai?.has_key ?? false),
+    model: form.ocrOpenaiModel.trim(),
+  },
+  ocr_deepseek: {
+    base_url: form.ocrDeepseekBase.trim(),
+    api_key: keepKey(form.ocrDeepseekKey, status?.ocr_deepseek?.has_key ?? false),
+    model: form.ocrDeepseekModel.trim(),
   },
   rerank: {
     // 填了 Base URL 就算启用：重排只有 OpenAI 兼容 /v1/rerank 这一种形态
@@ -216,10 +237,18 @@ export const SetupWizard = () => {
   const closeWizard = useSetupWizard((state) => state.closeWizard)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [form, setForm] = useState<Form>(emptyForm)
-  const [mode, setWizardMode] = useState<'local' | 'cloud'>('local')
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
+  const [step, setStep] = useState<StepKey>('mode')
+  const [featureOpen, setFeatureOpen] = useState(false)
+  const [picked, setPicked] = useState<Record<FeatureKey, boolean>>({
+    search: false,
+    parsing: false,
+    voice: false,
+    extra: false,
+  })
+  const [enabled, setEnabled] = useState<FeatureKey[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -244,6 +273,10 @@ export const SetupWizard = () => {
     }
     let cancelled = false
     setMessage(null)
+    setStep('mode')
+    setEnabled([])
+    setFeatureOpen(false)
+    setPicked({ search: false, parsing: false, voice: false, extra: false })
     loadSetupStatus()
       .then((next) => {
         if (!cancelled) {
@@ -277,7 +310,7 @@ export const SetupWizard = () => {
     setMode('cloud')
     sessionStorage.setItem(DISMISSED, '1')
     closeWizard()
-    openSettings('general')
+    openSettings('data')
     showToast({ key: 'setupCloudNeedsKey' })
   }
 
@@ -331,6 +364,48 @@ export const SetupWizard = () => {
     }
   }
 
+  const sequence: StepKey[] = ['mode', 'llm', ...enabled]
+  const current = Math.max(0, sequence.indexOf(step))
+  const isLast = step !== 'mode' && step !== 'llm' && current === sequence.length - 1
+
+  const go = (delta: number) => {
+    const index = sequence.indexOf(step)
+    const target = sequence[Math.min(sequence.length - 1, Math.max(0, index + delta))]
+    if (target) {
+      setMessage(null)
+      setStep(target)
+    }
+  }
+
+  const nextAfterLlm = () => {
+    if (!form.baseUrl.trim() || !form.model.trim()) {
+      setMessage({ text: t('setupRequired'), error: true })
+      return
+    }
+    setFeatureOpen(true)
+  }
+
+  const startFeatures = () => {
+    const list = (['search', 'parsing', 'voice', 'extra'] as FeatureKey[]).filter(
+      (key) => picked[key]
+    )
+    setEnabled(list)
+    setFeatureOpen(false)
+    if (list.length === 0) {
+      void save()
+      return
+    }
+    setStep(list[0])
+  }
+
+  const skip = () => {
+    if (isLast) {
+      void save()
+      return
+    }
+    go(1)
+  }
+
   const disabled = saving || testing || status?.writable === false
   const keyPlaceholder = status?.llm.has_key ? t('setupApiKeySaved') : ''
   const searchOptions = [
@@ -342,171 +417,294 @@ export const SetupWizard = () => {
   const toolOptions = [
     { value: 'none', label: t('setupProviderNone') },
     { value: 'deepseek', label: 'DeepSeek' },
-    { value: 'openai', label: 'OpenAI 兼容' },
+    { value: 'openai', label: t('setupProviderOpenaiCompat') },
+  ]
+  const imageOptions = [
+    { value: 'vision', label: t('setupImageVision') },
+    { value: 'openai', label: t('setupImageOpenai') },
+    { value: 'deepseek', label: 'DeepSeek' },
+  ]
+  const docOptions = [
+    { value: 'python', label: t('setupDocPython') },
+    { value: 'deepseek', label: 'DeepSeek' },
   ]
   // 朗读的 provider 比 ASR/OCR 多一档 engine：用 engine 字段选模型的那类推理服务
   const ttsOptions = [
     ...toolOptions,
-    { value: 'engine', label: 'engine 字段（自建推理服务）' },
+    { value: 'engine', label: t('setupTtsEngineOption') },
   ]
   // 朗读返回容器：wav/mp3/opus 带容器头，浏览器自己判采样率；pcm 是裸流，按 24 kHz 处理
   const formatOptions = ['wav', 'mp3', 'opus', 'pcm'].map((value) => ({ value, label: value }))
 
+  const openaiOcrFields = (
+    <>
+      <p className={styles.hint}>{t('setupOcrOpenaiHint')}</p>
+      <label className={styles.field}>
+        <span className={styles.label}>Base URL</span>
+        <input
+          className={styles.input}
+          value={form.ocrOpenaiBase}
+          disabled={disabled}
+          onChange={(event) => update('ocrOpenaiBase', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.label}>API Key</span>
+        <input
+          className={styles.input}
+          type="password"
+          value={form.ocrOpenaiKey}
+          disabled={disabled}
+          placeholder={status?.ocr_openai?.has_key ? t('setupApiKeySaved') : ''}
+          onChange={(event) => update('ocrOpenaiKey', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.label}>{t('setupModel')}</span>
+        <input
+          className={styles.input}
+          value={form.ocrOpenaiModel}
+          disabled={disabled}
+          onChange={(event) => update('ocrOpenaiModel', event.target.value)}
+        />
+      </label>
+    </>
+  )
+
+  const deepseekOcrFields = (
+    <>
+      <p className={styles.hint}>{t('setupOcrDeepseekHint')}</p>
+      <label className={styles.field}>
+        <span className={styles.label}>Base URL</span>
+        <input
+          className={styles.input}
+          value={form.ocrDeepseekBase}
+          disabled={disabled}
+          placeholder="https://api.deepseek.com"
+          onChange={(event) => update('ocrDeepseekBase', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.label}>API Key</span>
+        <input
+          className={styles.input}
+          type="password"
+          value={form.ocrDeepseekKey}
+          disabled={disabled}
+          placeholder={status?.ocr_deepseek?.has_key ? t('setupApiKeySaved') : ''}
+          onChange={(event) => update('ocrDeepseekKey', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.label}>{t('setupModel')}</span>
+        <input
+          className={styles.input}
+          value={form.ocrDeepseekModel}
+          disabled={disabled}
+          onChange={(event) => update('ocrDeepseekModel', event.target.value)}
+        />
+      </label>
+    </>
+  )
+
+  const titles: Record<StepKey, TranslationKey> = {
+    mode: 'setupStepModeTitle',
+    llm: 'setupStepLlmTitle',
+    search: 'setupStepSearchTitle',
+    parsing: 'setupStepParsingTitle',
+    voice: 'setupStepVoiceTitle',
+    extra: 'setupStepExtraTitle',
+  }
+
   return (
-    <Modal
-      title={t('setupTitle')}
-      className={styles.dialog}
-      mainClassName={styles.body}
-      onClose={dismiss}
-      footer={
-        <>
-          <Button variant="outlined" size="m" disabled={saving} onClick={dismiss}>
-            {t('setupLater')}
-          </Button>
-          <Button
-            variant="primary"
-            size="m"
-            disabled={disabled || mode === 'cloud'}
-            onClick={() => void save()}
-          >
-            {saving ? t('setupTesting') : t('setupSave')}
-          </Button>
-        </>
-      }
-    >
-      <div className={styles.intro}>{t('setupIntro')}</div>
-      <div className={styles.modes} role="radiogroup" aria-label={t('setupTitle')}>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'local'}
-          className={mode === 'local' ? styles.modeActive : styles.mode}
-          onClick={() => setWizardMode('local')}
-        >
-          {t('setupSelfHosted')}
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'cloud'}
-          className={mode === 'cloud' ? styles.modeActive : styles.mode}
-          onClick={() => setWizardMode('cloud')}
-        >
-          {t('setupCloud')}
-        </button>
-      </div>
-
-      {status?.writable === false ? (
-        <div className={styles.warning}>{t('setupUnavailable')}</div>
-      ) : null}
-
-      {mode === 'cloud' ? (
-        <div className={styles.cloudBox}>
-          <div>{t('setupCloudDesc')}</div>
-          <Button variant="outlined" size="m" onClick={useCloud}>
-            {t('setupCloudAction')}
-          </Button>
-        </div>
-      ) : (
-        <div className={styles.form}>
-          <ProviderSelect
-            label={t('setupLlmProtocol')}
-            value={form.llmProvider}
-            options={[
-              { value: 'anthropic', label: t('setupLlmAnthropic') },
-              { value: 'openai', label: t('setupLlmOpenai') },
-            ]}
-            disabled={disabled}
-            onChange={(value) => update('llmProvider', value)}
-          />
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupBaseUrl')}</span>
-            <input
-              className={styles.input}
-              value={form.baseUrl}
-              disabled={disabled}
-              placeholder={
-                form.llmProvider === 'openai'
-                  ? 'http://127.0.0.1:11434/v1'
-                  : 'https://api.deepseek.com/anthropic'
-              }
-              onChange={(event) => update('baseUrl', event.target.value)}
-            />
-            <span className={styles.hint}>{t('setupLlmProtocolDesc')}</span>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupApiKey')}</span>
-            <input
-              className={styles.input}
-              type="password"
-              value={form.apiKey}
-              disabled={disabled}
-              placeholder={keyPlaceholder}
-              onChange={(event) => update('apiKey', event.target.value)}
-            />
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupModel')}</span>
-            <input
-              className={styles.input}
-              value={form.model}
-              disabled={disabled}
-              placeholder={form.llmProvider === 'openai' ? 'qwen3:8b' : 'deepseek-flash'}
-              onChange={(event) => update('model', event.target.value)}
-            />
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupLlmHeaders')}</span>
-            <input
-              className={styles.input}
-              value={form.llmHeaders}
-              disabled={disabled}
-              placeholder={
-                (status?.llm.header_names?.length ?? 0) > 0
-                  ? t('setupLlmHeadersSaved', {
-                      names: status?.llm.header_names?.join(', ') ?? '',
-                    })
-                  : '{"api-key": "{key}"}'
-              }
-              onChange={(event) => update('llmHeaders', event.target.value)}
-            />
-            <span className={styles.hint}>{t('setupLlmHeadersHint')}</span>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupContextLimit')}</span>
-            <input
-              className={styles.input}
-              type="number"
-              min={1024}
-              value={form.contextLimit}
-              disabled={disabled}
-              onChange={(event) => update('contextLimit', event.target.value)}
-            />
-            <span className={styles.hint}>{t('setupContextLimitDesc')}</span>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.label}>{t('setupMaxOutput')}</span>
-            <input
-              className={styles.input}
-              type="number"
-              min={128}
-              value={form.maxOutput}
-              disabled={disabled}
-              onChange={(event) => update('maxOutput', event.target.value)}
-            />
-            <span className={styles.hint}>{t('setupMaxOutputDesc')}</span>
-          </label>
-          <div className={styles.testRow}>
-            <Button variant="outlined" size="m" disabled={disabled} onClick={() => void runTest()}>
-              {testing ? t('setupTesting') : t('setupTest')}
+    <>
+      <Modal
+        title={t('setupTitle')}
+        className={styles.dialog}
+        mainClassName={styles.body}
+        onClose={dismiss}
+        footer={
+          <div className={styles.footerActions}>
+            <Button variant="outlined" size="m" disabled={saving} onClick={dismiss}>
+              {t('setupLater')}
             </Button>
-            {message ? (
-              <span className={message.error ? styles.error : styles.success}>{message.text}</span>
+            {step !== 'mode' && step !== 'llm' ? (
+              <>
+                <Button variant="outlined" size="m" disabled={disabled} onClick={() => go(-1)}>
+                  {t('setupBack')}
+                </Button>
+                <Button variant="outlined" size="m" disabled={disabled} onClick={skip}>
+                  {t('setupSkip')}
+                </Button>
+              </>
             ) : null}
+            {step === 'llm' ? (
+              <Button variant="primary" size="m" disabled={disabled} onClick={nextAfterLlm}>
+                {t('setupNext')}
+              </Button>
+            ) : step === 'mode' ? null : (
+              <Button
+                variant="primary"
+                size="m"
+                disabled={disabled}
+                onClick={() => (isLast ? void save() : go(1))}
+              >
+                {saving ? t('setupTesting') : isLast ? t('setupFinish') : t('setupNext')}
+              </Button>
+            )}
           </div>
+        }
+      >
+        {status?.writable === false ? (
+          <div className={styles.warning}>{t('setupUnavailable')}</div>
+        ) : null}
 
-          <details className={styles.advanced}>
-            <summary>{t('setupAdvanced')}</summary>
+        <div className={styles.stepHeader}>
+          <div className={styles.stepTitle}>{t(titles[step])}</div>
+          <div className={styles.stepMeta}>
+            <span className={styles.stepCount}>
+              {t('setupStepOf', { current: current + 1, total: sequence.length })}
+            </span>
+            <span className={styles.stepDots}>
+              {sequence.map((key, index) => (
+                <span
+                  key={key}
+                  className={clsx(styles.stepDot, index <= current && styles.stepDotActive)}
+                />
+              ))}
+            </span>
+          </div>
+        </div>
+
+        {message && step !== 'llm' ? (
+          <div className={message.error ? styles.error : styles.success}>{message.text}</div>
+        ) : null}
+
+        {step === 'mode' ? (
+          <>
+            <div className={styles.intro}>{t('setupIntro')}</div>
+            <div className={styles.optionGrid}>
+              <button type="button" className={styles.optionCard} onClick={useCloud}>
+                <span className={styles.optionTitle}>{t('setupModeCloudTitle')}</span>
+                <span className={styles.optionDesc}>{t('setupModeCloudDesc')}</span>
+              </button>
+              <button
+                type="button"
+                className={clsx(styles.optionCard, styles.optionCardActive)}
+                onClick={() => setStep('llm')}
+              >
+                <span className={styles.optionTitle}>{t('setupModeLocalTitle')}</span>
+                <span className={styles.optionDesc}>{t('setupModeLocalDesc')}</span>
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 'llm' ? (
+          <div className={styles.form}>
+            <ProviderSelect
+              label={t('setupLlmProtocol')}
+              value={form.llmProvider}
+              options={[
+                { value: 'anthropic', label: t('setupLlmAnthropic') },
+                { value: 'openai', label: t('setupLlmOpenai') },
+              ]}
+              disabled={disabled}
+              onChange={(value) => update('llmProvider', value)}
+            />
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupBaseUrl')}</span>
+              <input
+                className={styles.input}
+                value={form.baseUrl}
+                disabled={disabled}
+                placeholder={
+                  form.llmProvider === 'openai'
+                    ? 'http://127.0.0.1:11434/v1'
+                    : 'https://api.deepseek.com/anthropic'
+                }
+                onChange={(event) => update('baseUrl', event.target.value)}
+              />
+              <span className={styles.hint}>{t('setupLlmProtocolDesc')}</span>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupApiKey')}</span>
+              <input
+                className={styles.input}
+                type="password"
+                value={form.apiKey}
+                disabled={disabled}
+                placeholder={keyPlaceholder}
+                onChange={(event) => update('apiKey', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupModel')}</span>
+              <input
+                className={styles.input}
+                value={form.model}
+                disabled={disabled}
+                placeholder={form.llmProvider === 'openai' ? 'qwen3:8b' : 'deepseek-flash'}
+                onChange={(event) => update('model', event.target.value)}
+              />
+            </label>
+            <div className={styles.testRow}>
+              <Button variant="outlined" size="m" disabled={disabled} onClick={() => void runTest()}>
+                {testing ? t('setupTesting') : t('setupTest')}
+              </Button>
+              {message ? (
+                <span className={message.error ? styles.error : styles.success}>{message.text}</span>
+              ) : null}
+            </div>
+            <details className={styles.advanced}>
+              <summary>{t('setupAdvanced')}</summary>
+              <label className={styles.field}>
+                <span className={styles.label}>{t('setupLlmHeaders')}</span>
+                <input
+                  className={styles.input}
+                  value={form.llmHeaders}
+                  disabled={disabled}
+                  placeholder={
+                    (status?.llm.header_names?.length ?? 0) > 0
+                      ? t('setupLlmHeadersSaved', {
+                          names: status?.llm.header_names?.join(', ') ?? '',
+                        })
+                      : '{"api-key": "{key}"}'
+                  }
+                  onChange={(event) => update('llmHeaders', event.target.value)}
+                />
+                <span className={styles.hint}>{t('setupLlmHeadersHint')}</span>
+              </label>
+              <label className={styles.field}>
+                <span className={styles.label}>{t('setupContextLimit')}</span>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min={1024}
+                  value={form.contextLimit}
+                  disabled={disabled}
+                  onChange={(event) => update('contextLimit', event.target.value)}
+                />
+                <span className={styles.hint}>{t('setupContextLimitDesc')}</span>
+              </label>
+              <label className={styles.field}>
+                <span className={styles.label}>{t('setupMaxOutput')}</span>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min={128}
+                  value={form.maxOutput}
+                  disabled={disabled}
+                  onChange={(event) => update('maxOutput', event.target.value)}
+                />
+                <span className={styles.hint}>{t('setupMaxOutputDesc')}</span>
+              </label>
+            </details>
+          </div>
+        ) : null}
+
+        {step === 'search' ? (
+          <div className={styles.form}>
             <ProviderSelect
               label={t('setupSearchProvider')}
               value={form.searchProvider}
@@ -532,9 +730,7 @@ export const SetupWizard = () => {
                     type="password"
                     value={form.searchKey}
                     disabled={disabled}
-                    placeholder={
-                      status?.search.has_key ? t('setupApiKeySaved') : ''
-                    }
+                    placeholder={status?.search.has_key ? t('setupApiKeySaved') : ''}
                     onChange={(event) => update('searchKey', event.target.value)}
                   />
                 </label>
@@ -553,85 +749,37 @@ export const SetupWizard = () => {
                 </label>
               </>
             ) : null}
-            <span className={styles.label}>{t('setupRerankProvider')}</span>
-            <p className={styles.hint}>{t('setupRerankHint')}</p>
-                <label className={styles.field}>
-                  <span className={styles.label}>Base URL</span>
-                  <input
-                    className={styles.input}
-                    value={form.rerankBase}
-                    disabled={disabled}
-                    placeholder="http://127.0.0.1:8000"
-                    onChange={(event) => update('rerankBase', event.target.value)}
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>API Key</span>
-                  <input
-                    className={styles.input}
-                    type="password"
-                    value={form.rerankKey}
-                    disabled={disabled}
-                    placeholder={status?.rerank?.has_key ? t('setupApiKeySaved') : ''}
-                    onChange={(event) => update('rerankKey', event.target.value)}
-                  />
-                </label>
-            <label className={styles.field}>
-              <span className={styles.label}>{t('setupModel')}</span>
-              <input
-                className={styles.input}
-                value={form.rerankModel}
-                disabled={disabled}
-                onChange={(event) => update('rerankModel', event.target.value)}
-              />
-            </label>
-            <span className={styles.label}>{t('setupEmbeddingProvider')}</span>
-            <p className={styles.hint}>{t('setupEmbeddingHint')}</p>
-            <label className={styles.field}>
-              <span className={styles.label}>Base URL</span>
-              <input
-                className={styles.input}
-                value={form.embeddingBase}
-                disabled={disabled}
-                placeholder="http://127.0.0.1:8080"
-                onChange={(event) => update('embeddingBase', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>API Key</span>
-              <input
-                className={styles.input}
-                type="password"
-                value={form.embeddingKey}
-                disabled={disabled}
-                placeholder={status?.embedding?.has_key ? t('setupApiKeySaved') : ''}
-                onChange={(event) => update('embeddingKey', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>{t('setupModel')}</span>
-              <input
-                className={styles.input}
-                value={form.embeddingModel}
-                disabled={disabled}
-                placeholder="bge-m3"
-                onChange={(event) => update('embeddingModel', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>{t('setupEmbeddingDim')}</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={0}
-                max={16384}
-                value={form.embeddingDim}
-                disabled={disabled}
-                placeholder="1024"
-                onChange={(event) => update('embeddingDim', event.target.value)}
-              />
-              <span className={styles.hint}>{t('setupEmbeddingDimHint')}</span>
-            </label>
+          </div>
+        ) : null}
+
+        {step === 'parsing' ? (
+          <div className={styles.form}>
+            <p className={styles.hint}>{t('setupParsingHint')}</p>
+            <ProviderSelect
+              label={t('setupImageParsing')}
+              value={form.imageParser}
+              options={imageOptions}
+              disabled={disabled}
+              onChange={(value) => update('imageParser', value)}
+            />
+            {form.imageParser === 'openai' ? openaiOcrFields : null}
+            {form.imageParser === 'deepseek' && form.docParser !== 'deepseek'
+              ? deepseekOcrFields
+              : null}
+            <ProviderSelect
+              label={t('setupDocParsing')}
+              value={form.docParser}
+              options={docOptions}
+              disabled={disabled}
+              onChange={(value) => update('docParser', value)}
+            />
+            {form.docParser === 'deepseek' ? deepseekOcrFields : null}
+          </div>
+        ) : null}
+
+        {step === 'voice' ? (
+          <div className={styles.form}>
+            <div className={styles.stepSection}>{t('setupAsrSection')}</div>
             <ProviderSelect
               label={t('setupAsrProvider')}
               value={form.asrProvider}
@@ -672,46 +820,8 @@ export const SetupWizard = () => {
                 </label>
               </>
             ) : null}
-            <ProviderSelect
-              label={t('setupOcrProvider')}
-              value={form.ocrProvider}
-              options={toolOptions}
-              disabled={disabled}
-              onChange={(value) => update('ocrProvider', value)}
-            />
-            {form.ocrProvider !== 'none' ? (
-              <>
-                <label className={styles.field}>
-                  <span className={styles.label}>Base URL</span>
-                  <input
-                    className={styles.input}
-                    value={form.ocrBase}
-                    disabled={disabled}
-                    onChange={(event) => update('ocrBase', event.target.value)}
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>API Key</span>
-                  <input
-                    className={styles.input}
-                    type="password"
-                    value={form.ocrKey}
-                    disabled={disabled}
-                    placeholder={status?.ocr.has_key ? t('setupApiKeySaved') : ''}
-                    onChange={(event) => update('ocrKey', event.target.value)}
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.label}>{t('setupModel')}</span>
-                  <input
-                    className={styles.input}
-                    value={form.ocrModel}
-                    disabled={disabled}
-                    onChange={(event) => update('ocrModel', event.target.value)}
-                  />
-                </label>
-              </>
-            ) : null}
+
+            <div className={styles.stepSection}>{t('setupTtsSection')}</div>
             <ProviderSelect
               label={t('setupTtsProvider')}
               value={form.ttsProvider}
@@ -777,9 +887,160 @@ export const SetupWizard = () => {
                 />
               </>
             ) : null}
-          </details>
-        </div>
-      )}
-    </Modal>
+          </div>
+        ) : null}
+
+        {step === 'extra' ? (
+          <div className={styles.form}>
+            <div className={styles.stepSection}>{t('setupRerankSection')}</div>
+            <p className={styles.hint}>{t('setupRerankHint')}</p>
+            <label className={styles.field}>
+              <span className={styles.label}>Base URL</span>
+              <input
+                className={styles.input}
+                value={form.rerankBase}
+                disabled={disabled}
+                placeholder="http://127.0.0.1:8000"
+                onChange={(event) => update('rerankBase', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>API Key</span>
+              <input
+                className={styles.input}
+                type="password"
+                value={form.rerankKey}
+                disabled={disabled}
+                placeholder={status?.rerank?.has_key ? t('setupApiKeySaved') : ''}
+                onChange={(event) => update('rerankKey', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupModel')}</span>
+              <input
+                className={styles.input}
+                value={form.rerankModel}
+                disabled={disabled}
+                onChange={(event) => update('rerankModel', event.target.value)}
+              />
+            </label>
+
+            <div className={styles.stepSection}>{t('setupEmbeddingSection')}</div>
+            <p className={styles.hint}>{t('setupEmbeddingHint')}</p>
+            <label className={styles.field}>
+              <span className={styles.label}>Base URL</span>
+              <input
+                className={styles.input}
+                value={form.embeddingBase}
+                disabled={disabled}
+                placeholder="http://127.0.0.1:8080"
+                onChange={(event) => update('embeddingBase', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>API Key</span>
+              <input
+                className={styles.input}
+                type="password"
+                value={form.embeddingKey}
+                disabled={disabled}
+                placeholder={status?.embedding?.has_key ? t('setupApiKeySaved') : ''}
+                onChange={(event) => update('embeddingKey', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupModel')}</span>
+              <input
+                className={styles.input}
+                value={form.embeddingModel}
+                disabled={disabled}
+                placeholder="bge-m3"
+                onChange={(event) => update('embeddingModel', event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.label}>{t('setupEmbeddingDim')}</span>
+              <input
+                className={styles.input}
+                type="number"
+                min={0}
+                max={16384}
+                value={form.embeddingDim}
+                disabled={disabled}
+                placeholder="1024"
+                onChange={(event) => update('embeddingDim', event.target.value)}
+              />
+              <span className={styles.hint}>{t('setupEmbeddingDimHint')}</span>
+            </label>
+          </div>
+        ) : null}
+      </Modal>
+
+      {featureOpen ? (
+        <Modal
+          title={t('setupFeatureTitle')}
+          className={styles.featureDialog}
+          onClose={() => setFeatureOpen(false)}
+          footer={
+            <div className={styles.footerActions}>
+              <Button variant="outlined" size="m" onClick={() => setFeatureOpen(false)}>
+                {t('setupBack')}
+              </Button>
+              <Button
+                variant="outlined"
+                size="m"
+                onClick={() => {
+                  setFeatureOpen(false)
+                  void save()
+                }}
+              >
+                {t('setupFeatureNone')}
+              </Button>
+              <Button variant="primary" size="m" onClick={startFeatures}>
+                {t('setupFeatureStart')}
+              </Button>
+            </div>
+          }
+        >
+          <p className={styles.hint}>{t('setupFeatureDesc')}</p>
+          <div className={styles.featureTools}>
+            <button
+              type="button"
+              className={styles.featureAll}
+              onClick={() =>
+                setPicked(
+                  picked.search && picked.parsing && picked.voice && picked.extra
+                    ? { search: false, parsing: false, voice: false, extra: false }
+                    : { search: true, parsing: true, voice: true, extra: true }
+                )
+              }
+            >
+              {picked.search && picked.parsing && picked.voice && picked.extra
+                ? t('setupFeatureClear')
+                : t('setupFeatureAll')}
+            </button>
+          </div>
+          <div className={styles.featureList}>
+            {(
+              [
+                ['search', 'setupFeatureSearch'],
+                ['parsing', 'setupFeatureParsing'],
+                ['voice', 'setupFeatureVoice'],
+                ['extra', 'setupFeatureExtra'],
+              ] as [FeatureKey, TranslationKey][]
+            ).map(([key, label]) => (
+              <label key={key} className={styles.featureItem}>
+                <input
+                  type="checkbox"
+                  checked={picked[key]}
+                  onChange={(event) => setPicked({ ...picked, [key]: event.target.checked })}
+                />
+                <span className={styles.featureName}>{t(label)}</span>
+              </label>
+            ))}
+          </div>
+        </Modal>
+      ) : null}
+    </>
   )
 }

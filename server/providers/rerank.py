@@ -9,10 +9,13 @@
 """
 from __future__ import annotations
 
+import logging
 import time
 
 import config
 from providers.common import ProviderError, api_url, client, detail
+
+_log = logging.getLogger("rerank")
 
 _PROBE_TTL = 60.0
 _probe: dict = {"at": 0.0, "ok": False, "detail": "未探测"}
@@ -78,6 +81,7 @@ def rerank(query: str, documents: list[str]) -> list[int]:
     pairs = [(index, doc) for index, doc in pairs if doc]
     if len(pairs) < 2:
         return list(range(len(documents)))
+    started = time.perf_counter()
     body = _request(query, [doc for _, doc in pairs], config.RERANK_TIMEOUT)
     scored: list[tuple[float, int]] = []
     for item in _entries(body):
@@ -96,6 +100,7 @@ def rerank(query: str, documents: list[str]) -> list[int]:
     seen = set(order)
     order.extend(index for index, _ in pairs if index not in seen)
     order.extend(index for index, doc in enumerate(documents) if not doc)
+    _log.info("rerank %d docs ms=%d", len(pairs), round((time.perf_counter() - started) * 1000))
     return order
 
 

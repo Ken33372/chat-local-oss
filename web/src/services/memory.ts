@@ -3,6 +3,8 @@ import { create } from 'zustand'
 export type MemoryItem = {
   id: number
   text: string
+  /** 一句话说明，检索时优先匹配 */
+  description: string
   pinned: boolean
   source: string
   createdAt: number
@@ -13,8 +15,11 @@ export type MemoryProposal = {
   id: number
   kind: string
   text: string
+  description?: string
   pinned: boolean
   createdAt: number
+  /** 仅修改类提案：原记忆原文 */
+  oldText?: string
 }
 
 export type MemorySettings = {
@@ -44,11 +49,15 @@ export const loadMemoryItems = async (): Promise<MemoryItem[]> => {
   return payload.items
 }
 
-export const addMemory = async (text: string, pinned: boolean): Promise<MemoryItem> => {
+export const addMemory = async (
+  text: string,
+  pinned: boolean,
+  description = ''
+): Promise<MemoryItem> => {
   const response = await fetch('/api/memory/items', {
     method: 'POST',
     headers: guard,
-    body: JSON.stringify({ text, pinned }),
+    body: JSON.stringify({ text, pinned, description }),
   })
   return json<MemoryItem>(response)
 }
@@ -56,12 +65,14 @@ export const addMemory = async (text: string, pinned: boolean): Promise<MemoryIt
 export const updateMemory = async (
   id: number,
   text: string,
-  pinned: boolean
+  pinned: boolean,
+  description?: string
 ): Promise<MemoryItem> => {
+  const body = description === undefined ? { text, pinned } : { text, pinned, description }
   const response = await fetch(`/api/memory/items/${id}`, {
     method: 'PATCH',
     headers: guard,
-    body: JSON.stringify({ text, pinned }),
+    body: JSON.stringify(body),
   })
   return json<MemoryItem>(response)
 }
@@ -70,6 +81,27 @@ export const deleteMemory = async (id: number): Promise<void> => {
   const response = await fetch(`/api/memory/items/${id}`, {
     method: 'DELETE',
     headers: guard,
+  })
+  await json<{ ok: boolean }>(response)
+}
+
+export type MemoryTidyPair = {
+  a: MemoryItem
+  b: MemoryItem
+  score: number
+}
+
+export const loadTidy = async (): Promise<MemoryTidyPair[]> => {
+  const response = await fetch('/api/memory/tidy')
+  const payload = await json<{ pairs: MemoryTidyPair[] }>(response)
+  return payload.pairs
+}
+
+export const mergeMemories = async (keep: number, drop: number): Promise<void> => {
+  const response = await fetch('/api/memory/tidy/merge', {
+    method: 'POST',
+    headers: guard,
+    body: JSON.stringify({ keep, drop }),
   })
   await json<{ ok: boolean }>(response)
 }

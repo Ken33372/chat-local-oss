@@ -25,6 +25,7 @@ import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
+import { useDebugPanel } from '../debug/debugPanelState.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
@@ -48,6 +49,17 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const [searching, setSearching] = useState(false)
   const [searchFailed, setSearchFailed] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const nameTaps = useRef<number[]>([])
+
+  // 隐藏入口：1.5 秒内连点标题 5 次打开调试面板
+  const onNameClick = () => {
+    const now = Date.now()
+    nameTaps.current = [...nameTaps.current.filter((at) => now - at < 1500), now]
+    if (nameTaps.current.length >= 5) {
+      nameTaps.current = []
+      useDebugPanel.getState().openPanel()
+    }
+  }
 
   useEffect(() => {
     if (searchOpen) {
@@ -132,7 +144,9 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   return (
     <div className={clsx(styles.sider, mobile && styles.mobile)}>
       <div className={styles.top}>
-        <div className={styles.appName}>{t('appName')}</div>
+        <div className={styles.appName} onClick={onNameClick}>
+          {t('appName')}
+        </div>
         <div className={styles.topActions}>
           <IconButton
             size="m"

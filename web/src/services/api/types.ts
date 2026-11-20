@@ -237,7 +237,7 @@ export type MessageStreamEvent =
   /** 本机后端的记忆提示：只用于在思考链里显示，不进入内容块，也不回传上游 */
   | {
       type: 'memory_notice'
-      action: 'inject' | 'search' | 'remember'
+      action: 'inject' | 'search' | 'remember' | 'edit'
       count: number
       ok?: boolean
     }

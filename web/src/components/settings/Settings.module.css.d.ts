@@ -46,6 +46,16 @@ declare const styles: {
   readonly "memoryRow": string;
   readonly "memoryRowPending": string;
   readonly "memoryText": string;
+  readonly "memoryTextOld": string;
+  readonly "memoryProposalBody": string;
+  readonly "memoryDescription": string;
+  readonly "promptCardBody": string;
+  readonly "promptName": string;
+  readonly "promptBadge": string;
+  readonly "promptDescription": string;
+  readonly "promptField": string;
+  readonly "promptFieldLabel": string;
+  readonly "promptInput": string;
   readonly "memoryActions": string;
   readonly "memoryForm": string;
   readonly "memoryInput": string;

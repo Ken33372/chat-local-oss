@@ -313,5 +313,40 @@ def plan(text: str) -> dict:
     }
 
 
+def probe() -> dict:
+    """调试面板用：真合成一小句，检查返回的是不是非空音频。"""
+    import time
+
+    if not available():
+        return {"ok": False, "state": "warn", "ms": 0, "detail": "未配置朗读（TTS_PROVIDER）"}
+    started = time.perf_counter()
+    try:
+        audio, mime = synthesize("调试探针，请忽略这句话。")
+    except Exception as error:
+        message = str(error)
+        # 409/未就绪 = 服务在但没准备好；连不上 = 不可达。两者都记为警告而非错误
+        state = (
+            "warn"
+            if "409" in message
+            or "未就绪" in message
+            or type(error).__name__.startswith(("Connect", "ReadTimeout"))
+            else "error"
+        )
+        return {
+            "ok": False,
+            "state": state,
+            "ms": round((time.perf_counter() - started) * 1000),
+            "detail": f"{type(error).__name__}: {error}",
+        }
+    return {
+        "ok": bool(audio),
+        "state": "ok" if audio else "error",
+        "ms": round((time.perf_counter() - started) * 1000),
+        "detail": f"返回 {len(audio)} 字节，{mime}",
+        "bytes": len(audio),
+        "mime": mime,
+    }
+
+
 def health() -> dict:
     return {"ok": available(), "provider": config.TTS_PROVIDER, "voice": config.TTS_VOICE}

@@ -15,7 +15,7 @@ README 只放"用不用、怎么跑起来"；这份文档放两类细节：可�
 | 重排 | `RERANK_PROVIDER` 与 `RERANK_BASE_URL`，**两个都要** | `RERANK_MODEL`、`RERANK_API_KEY`、`RERANK_TIMEOUT` |
 | 向量 | `EMBEDDING_PROVIDER`、`EMBEDDING_BASE_URL`、`EMBEDDING_MODEL`、`EMBEDDING_DIM` | `EMBEDDING_API_KEY` |
 | 语音输入 | `ASR_PROVIDER` 与 `ASR_BASE_URL` | `ASR_MODEL`（默认 `whisper-1`）、`ASR_API_KEY` |
-| OCR | `OCR_PROVIDER` 与 `OCR_BASE_URL` | `OCR_MODEL`（默认 `gpt-4o-mini`）、`OCR_API_KEY` |
+| 附件解析 | 图片：`CHAT_LOCAL_IMAGE_PARSER`；文档：`CHAT_LOCAL_DOC_PARSER` | `OCR_OPENAI_*` / `OCR_DEEPSEEK_*` 两套凭据 |
 | 朗读 | `TTS_PROVIDER` 与 `TTS_BASE_URL`；`engine` 这一档还必须填 `TTS_VOICE` | `TTS_MODEL`（默认 `tts-1`）、`TTS_RESPONSE_FORMAT`、`TTS_MAX_CHARS` |
 
 只填 `RERANK_BASE_URL` 不会开启重排：`RERANK_PROVIDER` 默认是 `none`，两项缺一不可。
@@ -32,7 +32,7 @@ LLM_MODEL=qwen3
 LLM_API_KEY=
 ```
 
-拿到：对话、思考、历史、上下文管理。搜索、语音、OCR、朗读都不显示入口。
+拿到：对话、思考、历史、上下文管理。搜索、语音、附件解析、朗读都不显示入口。
 
 模型端支持两种协议，用 `LLM_PROVIDER` 选：默认 `anthropic` 走 `POST /v1/messages`（例如 DeepSeek 的 `/anthropic` 端点）；填 `openai` 走 `POST /v1/chat/completions`，Ollama、LM Studio、vLLM、llama.cpp 和各家云服务可以直接接，不需要额外网关。详见下方「对话模型的两条协议」。
 
@@ -68,11 +68,16 @@ ASR_BASE_URL=http://127.0.0.1:9000
 ASR_MODEL=whisper-1
 ASR_API_KEY=
 
-# ---- OCR：只有图片走视觉时可以不配；PDF/Word/PPT 需要 DeepSeek OCR ----
-OCR_PROVIDER=openai
-OCR_BASE_URL=http://127.0.0.1:9001
-OCR_MODEL=gpt-4o-mini
-OCR_API_KEY=
+# ---- 附件解析：图片交给模型；文档本地抽文字（扫描件才需要 OCR） ----
+CHAT_LOCAL_IMAGE_PARSER=vision
+CHAT_LOCAL_DOC_PARSER=python
+# 需要图片走 OCR 时：
+# CHAT_LOCAL_IMAGE_PARSER=openai
+# OCR_OPENAI_BASE_URL=http://127.0.0.1:9001
+# OCR_OPENAI_MODEL=gpt-4o-mini
+# OCR_OPENAI_API_KEY=
+# 需要文档/图片走 DeepSeek OCR 时：
+# OCR_DEEPSEEK_API_KEY=...
 
 # ---- 朗读 ----
 TTS_PROVIDER=openai
@@ -86,7 +91,7 @@ TTS_RESPONSE_FORMAT=wav
 
 ### 示例 3：一把 DeepSeek key 打通（仅 `.env`）
 
-这个快捷方式**只能写在 `.env` 或系统环境变量里**，首次运行向导没有「DeepSeek key」这一项；用向导配置的人需要在 LLM / 语音 / OCR 三处分别选 `deepseek` 并各填一次 key（或者干脆改用 `.env`）。
+这个快捷方式**只能写在 `.env` 或系统环境变量里**，首次运行向导没有「DeepSeek key」这一项；用向导配置的人需要在 LLM / 语音 / 附件解析三处分别选 `deepseek` 并各填一次 key（或者干脆改用 `.env`）。
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx

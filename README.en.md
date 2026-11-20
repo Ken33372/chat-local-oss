@@ -63,7 +63,7 @@ Windows x64 users can download the portable ZIP from [Releases](https://github.c
 
 ### First run
 
-If nothing is configured yet, the first visit shows a setup wizard: **DeepSeek Cloud** just needs an API key; **self-hosted backend** first picks an API protocol (Anthropic-compatible or OpenAI-compatible), then a base URL, API key and model name, with search, ASR, OCR and read-aloud under Advanced. Changes take effect immediately.
+If nothing is configured yet, the first visit shows a step-by-step wizard: pick **DeepSeek Cloud** (enter an API key and you are done; it jumps straight to Data management) or **self-hosted backend**. For self-hosted, configure the model first, then tick the extras you want (search, attachment parsing, voice, rerank and embeddings); every later step can be skipped. Changes take effect immediately.
 
 If you already configured everything through `.env`, skip the wizard. The precedence of the two sources, the wizard entry point and every variable are documented under [Configuration](#configuration).
 
@@ -90,7 +90,7 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 
 | Variable | Description |
 |---|---|
-| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
+| `DEEPSEEK_API_KEY` | Automatically points LLM, ASR and the DeepSeek OCR profile at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
 | `LLM_PROVIDER` | `anthropic` (default, `POST /v1/messages`) or `openai` (`POST /v1/chat/completions`, e.g. Ollama, LM Studio, vLLM). Search, citations, thinking, attachments, titles and compression behave the same under both; see [docs/providers.md](docs/providers.md#the-two-llm-protocols) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Model endpoint for the self-hosted backend; Anthropic-compatible accepts a prefix like `/anthropic` or a full `/v1/messages` endpoint, OpenAI-compatible accepts a root, a URL ending in `/v1`, or a full endpoint |
 | `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
@@ -98,8 +98,10 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | Speech recognition; the OpenAI-compatible default model is `whisper-1`. A root URL, or any URL ending in `/v1` (including prefixed ones such as `/api/v1`), gets `/v1/audio/transcriptions` appended; a full URL is used as-is; responses may be `{text}`, `[{text}]`, `{segments:[{text}]}` or plain text |
-| `OCR_PROVIDER` | `none` / `deepseek` / `openai` |
-| `OCR_BASE_URL` / `OCR_API_KEY` / `OCR_MODEL` | Document/image OCR; the OpenAI-compatible path supports images only. A root URL gets `/v1/chat/completions` appended, a full URL is used as-is |
+| `CHAT_LOCAL_IMAGE_PARSER` | `vision` (follow the model, default) / `openai` / `deepseek`: how images are parsed. When the model rejects an image it falls back to OCR |
+| `CHAT_LOCAL_DOC_PARSER` | `python` (default) / `deepseek`: how documents are parsed. `python` extracts the text layer of PDF/docx/pptx locally; if nothing comes out (scans), it falls back to DeepSeek OCR when configured |
+| `OCR_OPENAI_BASE_URL` / `OCR_OPENAI_API_KEY` / `OCR_OPENAI_MODEL` | Used when images are set to `openai`; images only, a root URL gets `/v1/chat/completions` |
+| `OCR_DEEPSEEK_BASE_URL` / `OCR_DEEPSEEK_API_KEY` / `OCR_DEEPSEEK_MODEL` | Used when images or documents are set to `deepseek`; an empty URL means `https://api.deepseek.com` |
 | `TTS_PROVIDER` | `none` / `deepseek` / `openai` / `engine` / `template`; no read-aloud button unless it is set |
 | `TTS_BASE_URL` / `TTS_API_KEY` / `TTS_MODEL` | Read-aloud endpoint. With `deepseek` the base URL can be omitted and `DEEPSEEK_API_KEY` is reused; `openai` means the OpenAI-compatible `/v1/audio/speech`, so self-hosted engines point at their own address (default model name `tts-1`). A base URL that already carries a path — for example `http://host:8090/api/tts/speech` — is requested as-is instead of having the standard path appended |
 | `TTS_VOICE` | Voice name; leave empty for the service default (DeepSeek: `stella`; OpenAI: `alloy`) |
@@ -112,24 +114,24 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 | `EMBEDDING_PROVIDER` / `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Optional embedding endpoint (OpenAI-compatible `/v1/embeddings`) used only by advanced memory retrieval. `EMBEDDING_DIM` must match the model (1024 for Qwen3-Embedding-0.6B); changing the model or dimension re-embeds everything. If unconfigured or failing, retrieval falls back to local scoring. Advanced retrieval adds one embedding request per turn, plus one rerank request when configured (roughly 1–2 s measured locally). |
 | `SEARCH_CANDIDATE_TARGET` / `SEARCH_CANDIDATE_MAX` / `SEARCH_MAX_PAGES` / `SEARCH_SNIPPET_CHARS` | SearXNG aggregation tuning (20 / 60 / 5 / 500 by default) |
 | `SEARCH_ALLOWED_DOMAINS` / `SEARCH_BLOCKED_DOMAINS` | Comma-separated site rules. `example.com` also covers its subdomains; `example.com/docs` additionally restricts the path prefix |
-| `CHAT_LOCAL_IMAGE_MODE` | `vision` / `auto` / `ocr`. Defaults to `vision`, which sends images to the model and **requires vision/multimodal support**; `auto` falls back to OCR when the model rejects the image; `ocr` never sends images and uses OCR only. **If your model is not multimodal, set this to `auto` or `ocr`; otherwise sending an image returns an upstream error.** |
+| `CHAT_LOCAL_IMAGE_MODE` | Legacy, migration only: when `CHAT_LOCAL_IMAGE_PARSER` is absent, `ocr` maps to the old OCR service and anything else means `vision`. Use `CHAT_LOCAL_IMAGE_PARSER` for new setups |
 
 Unconfigured capabilities are hidden in the UI (for example, no ASR means no microphone button), so users do not hit buttons that are guaranteed to fail.
 
 ### More detail
 
-- Two copy-paste configuration examples, plus interface compatibility notes for read-aloud / ASR / OCR / rerank: [docs/providers.md](docs/providers.md)
+- Two copy-paste configuration examples, plus interface compatibility notes for read-aloud / ASR / attachment parsing / rerank: [docs/providers.md](docs/providers.md)
 - SearXNG result quality, the rerank switch, paging aggregation and measured timings: [docs/search.md](docs/search.md)
 
 ## Features
 
 ### Per-capability self-hosted configuration
 
-LLM, search, ASR, and OCR are configured independently:
+LLM, search, ASR and attachment parsing are configured independently:
 
 - **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is either Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint) or OpenAI-compatible (Ollama, LM Studio, vLLM, hosted APIs).
 - **ASR:** DeepSeek `/v1/tools/asr` or an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
-- **OCR:** DeepSeek `/v1/tools/ocr` (documents and images) or an OpenAI-compatible vision endpoint (images only).
+- **Attachment parsing:** images can follow the model, an OpenAI-compatible OCR, or DeepSeek; documents can use local Python text extraction or DeepSeek OCR. Python extraction reads the text layer of PDF/docx/pptx locally; scans fall back to DeepSeek OCR when configured.
 - **Search:** Tavily, AnySearch, SearXNG, or off. With SearXNG you can add your own reranker to enable multi-page aggregation and relevance ordering; without one, search stays single-page.
 - Unconfigured capabilities are hidden automatically.
 
@@ -146,12 +148,15 @@ LLM, search, ASR, and OCR are configured independently:
 - **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
 - **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
-- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank), the model can search them and propose new ones, and a proposal only takes effect after you confirm it. Export to txt and import txt/JSON (duplicates are skipped). Persona cards, custom system prompts and automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
+- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank), the model can search them and propose new or edited entries, a proposal only takes effect after you confirm it, each entry can carry a short matching description, and near-duplicates can be merged by hand. Export to txt and import txt/JSON (duplicates are skipped). Automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
+
+- **Prompts (role cards):** Settings → Prompts. Named cards with exactly one active globally; the body is appended after the built-in rules. Up to 30 cards and 8000 characters each, stored in `data/prompts.json`.
 
 ### UI and configuration
 
 - **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Advanced always shows two groups: rerank (base URL / API key / model, shared by search and advanced memory retrieval) and embedding (URL / key / model / dimensions, used only by advanced memory retrieval). Read-aloud is configured there as well.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
+- **Debug panel:** click the sidebar title five times within 1.5 s. Status shows configuration and vector coverage per service; Logs shows the last 800 backend lines including request timings; Probes make one real request to LLM / Embedding / Rerank / Search / memory retrieval / speech input / read-aloud and report result and latency.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
 
 ## Capability matrix
@@ -162,15 +167,15 @@ LLM, search, ASR, and OCR are configured independently:
 | Web search and page reading | DeepSeek server-side tools; the tools themselves are not billed | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | `deepseek` or OpenAI-compatible ASR |
 | Read-aloud | DeepSeek `/v1/tools/tts` | `deepseek` or OpenAI-compatible `/v1/audio/speech` |
-| Images | Sent directly to DeepSeek | Vision first; optional OCR fallback |
-| PDF / Word / PPT | DeepSeek Files API | DeepSeek OCR or disabled |
+| Images | Sent directly to DeepSeek | Follow the model / OpenAI-compatible OCR / DeepSeek |
+| PDF / Word / PPT | DeepSeek Files API | Python text extraction / DeepSeek OCR |
 
 Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `engine` / `template`) covering common self-hosted TTS servers; the shape table, the four `template` settings and what is explicitly out of scope (e.g. ComfyUI async workflows) are in [docs/providers.md](docs/providers.md#the-four-read-aloud-request-shapes).
 
 ## Limitations
 
 - This project has not been broadly tested; see Project status above.
-- OpenAI-compatible OCR handles images only; use DeepSeek OCR for PDF/Word/PPT or convert them to images first.
+- OpenAI-compatible OCR handles images only; PDF/Word/PPT are parsed locally by default, scans need DeepSeek OCR, and legacy `.doc` files should be saved as `.docx`.
 - Import/export currently supports only the DeepSeek export format.
 - Read-aloud has not been verified by listening on either path; whether self-hosted read-aloud works depends on your service actually implementing `/v1/audio/speech`.
 - The two known SearXNG pitfalls (Brave jump links, upstream engine rate limits) are documented in [docs/search.md](docs/search.md#two-known-sources-of-dirty-data).
@@ -179,7 +184,7 @@ Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `en
 
 - The server listens on `127.0.0.1` by default; write endpoints require the `X-Chat-Local: 1` header.
 - Chats and attachments live in local `data/`, independent of a DeepSeek account or cloud conversation sync. Cloud mode still sends conversation content to the DeepSeek API; only self-hosted mode keeps inference on the model endpoint you configure.
-- When web search, ASR, or OCR is enabled, the corresponding content is sent to the provider you chose. Disable anything you do not need.
+- When web search, ASR or attachment parsing is enabled, the corresponding content is sent to the provider you chose. Disable anything you do not need.
 - Self-hosted secrets live only in `.env` or `data/config.json` and are never returned in plaintext. Both locations are excluded by `.gitignore`.
 - The setup write endpoints accept only loopback requests. If the server listens on `0.0.0.0`, the wizard is read-only and you must use `.env`.
 - In cloud mode the API key is stored in browser localStorage, as in the original chat-demo.

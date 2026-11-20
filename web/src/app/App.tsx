@@ -17,6 +17,7 @@ import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
+import { DebugPanel } from '../components/debug/DebugPanel.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
@@ -141,6 +142,7 @@ export const App = () => {
       </div>
       <SettingsDialog />
       <SetupWizard />
+      <DebugPanel />
       <Toast />
     </>
   )

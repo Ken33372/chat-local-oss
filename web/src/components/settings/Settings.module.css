@@ -775,6 +775,87 @@
   gap: 6px;
 }
 
+.promptCardBody {
+  flex: 1 0 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.promptName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.promptBadge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.promptDescription {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.promptField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.promptFieldLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+.promptInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+  }
+}
+
+.memoryDescription {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.memoryProposalBody {
+  flex: 1 0 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memoryTextOld {
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: line-through;
+  overflow-wrap: anywhere;
+}
+
 .memoryForm {
   display: flex;
   align-items: center;

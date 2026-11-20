@@ -12,10 +12,13 @@ from fastapi.staticfiles import StaticFiles
 
 import ai
 import config
+import debug as debug_panel
 import memory
+import prompts
 import setup_store
 import storage
 from providers import asr as asr_provider
+from providers import extract as extract_provider
 from providers import llm as llm_provider
 from providers import ocr as ocr_provider
 from providers import search
@@ -24,6 +27,7 @@ from providers import tts as tts_provider
 app = FastAPI(title="chat-local", version="0.1.2")
 storage.init()
 memory.init()
+debug_panel.install()
 
 
 def guard(request: Request) -> None:
@@ -249,11 +253,16 @@ def _masked_status() -> dict:
             "has_key": bool(config.ASR_API_KEY),
             "model": config.ASR_MODEL,
         },
-        "ocr": {
-            "provider": config.OCR_PROVIDER,
-            "base_url": config.OCR_BASE_URL,
-            "has_key": bool(config.OCR_API_KEY),
-            "model": config.OCR_MODEL,
+        "parsing": {"image": config.IMAGE_PARSER, "document": config.DOC_PARSER},
+        "ocr_openai": {
+            "base_url": config.OCR_OPENAI_BASE_URL,
+            "has_key": bool(config.OCR_OPENAI_API_KEY),
+            "model": config.OCR_OPENAI_MODEL,
+        },
+        "ocr_deepseek": {
+            "base_url": config.OCR_DEEPSEEK_BASE_URL,
+            "has_key": bool(config.OCR_DEEPSEEK_API_KEY),
+            "model": config.OCR_DEEPSEEK_MODEL,
         },
         "rerank": {
             "provider": config.RERANK_PROVIDER,
@@ -365,7 +374,9 @@ async def memory_add(request: Request) -> dict:
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="请求体必须是对象")
     try:
-        item = memory.add_item(body.get("text"), bool(body.get("pinned")))
+        item = memory.add_item(
+            body.get("text"), bool(body.get("pinned")), description=body.get("description")
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
     return item
@@ -382,6 +393,7 @@ async def memory_update(item_id: int, request: Request) -> dict:
             item_id,
             body.get("text") if "text" in body else None,
             bool(body.get("pinned")) if "pinned" in body else None,
+            body.get("description") if "description" in body else None,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
@@ -393,6 +405,27 @@ def memory_delete(item_id: int, request: Request) -> dict:
     guard(request)
     memory.delete_item(item_id)
     return {"ok": True}
+
+
+@app.get("/api/memory/tidy")
+def memory_tidy() -> dict:
+    return {"pairs": memory.tidy_suggestions()}
+
+
+@app.post("/api/memory/tidy/merge")
+async def memory_tidy_merge(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    try:
+        keep = int(body.get("keep"))
+        drop = int(body.get("drop"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="keep / drop 必须是条目 id")
+    try:
+        item = memory.merge_items(keep, drop)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return {"ok": True, "item": item}
 
 
 @app.get("/api/memory/proposals")
@@ -513,13 +546,14 @@ async def ocr(request: Request, file: UploadFile = File(...)) -> dict:
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="文件为空")
-    if not ocr_provider.available():
-        raise HTTPException(status_code=400, detail="未配置 OCR，请在 .env 设置 OCR_PROVIDER")
+    name = file.filename or "upload"
+    ext = Path(name).suffix.lower().lstrip(".")
     try:
-        text = await asyncio.to_thread(
-            ocr_provider.ocr, file.filename or "document.pdf", data
-        )
-    except ocr_provider.ProviderError as error:
+        if ext in ("pdf", "docx", "pptx", "doc") and config.DOC_PARSER == "python":
+            text = await asyncio.to_thread(extract_provider.extract, name, data)
+        else:
+            text = await asyncio.to_thread(ocr_provider.ocr, name, data)
+    except Exception as error:
         raise HTTPException(status_code=503, detail=str(error))
     return {"text": text}
 
@@ -620,6 +654,46 @@ async def health() -> dict:
         },
         "model": config.LLM_MODEL,
     }
+
+
+# ---------------- 提示词（角色卡） ----------------
+
+@app.get("/api/prompts")
+def prompts_get() -> dict:
+    return prompts.load()
+
+
+@app.patch("/api/prompts")
+async def prompts_patch(request: Request) -> dict:
+    guard(request)
+    if not _setup_writable(request):
+        raise HTTPException(status_code=403, detail="服务不是仅本机监听，请改用 .env 配置")
+    body = await request.json()
+    try:
+        return prompts.save(body)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+# ---------------- 调试面板 ----------------
+
+@app.get("/api/debug/status")
+def debug_status(request: Request) -> dict:
+    guard(request)
+    return debug_panel.status()
+
+
+@app.get("/api/debug/logs")
+def debug_logs(request: Request, after: int = 0, limit: int = 300) -> dict:
+    guard(request)
+    return debug_panel.logs(after=after, limit=limit)
+
+
+@app.post("/api/debug/probe")
+async def debug_probe(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    return await debug_panel.probe(str(body.get("target") or ""))
 
 
 # ---------------- 前端静态文件 ----------------

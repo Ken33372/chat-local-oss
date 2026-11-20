@@ -9,8 +9,8 @@ class ProviderError(RuntimeError):
     pass
 
 
-def client(timeout: float = 120) -> httpx.Client:
-    return httpx.Client(trust_env=False, timeout=httpx.Timeout(timeout, connect=10))
+def client(timeout: float = 120, connect: float = 10) -> httpx.Client:
+    return httpx.Client(trust_env=False, timeout=httpx.Timeout(timeout, connect=connect))
 
 
 def join(base: str, path: str) -> str:

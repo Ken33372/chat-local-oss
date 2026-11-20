@@ -5,14 +5,30 @@
 """
 from __future__ import annotations
 
+import logging
+import time
+
 import config
 from providers.common import ProviderError, api_url, client, detail
 
+_log = logging.getLogger("embedding")
 _BATCH = 32
 
 
 def configured() -> bool:
     return config.EMBEDDING_PROVIDER != "none" and bool(config.EMBEDDING_BASE_URL)
+
+
+def health() -> dict:
+    """界面显示用：只报配置，不发请求；连通性交给调试面板的探针。"""
+    return {
+        "configured": configured(),
+        "provider": config.EMBEDDING_PROVIDER,
+        "base": config.EMBEDDING_BASE_URL,
+        "model": config.EMBEDDING_MODEL,
+        "dim": config.EMBEDDING_DIM,
+        "has_key": bool(config.EMBEDDING_API_KEY),
+    }
 
 
 def _auth() -> dict[str, str]:
@@ -24,12 +40,14 @@ def embed(texts: list[str], timeout: float = 30) -> list[list[float]]:
     cleaned = [str(text or "").strip() or "（空）" for text in texts]
     if not cleaned:
         return []
+    started = time.perf_counter()
     payload = {"model": config.EMBEDDING_MODEL, "input": cleaned}
     with client(timeout) as http:
         response = http.post(
             api_url(config.EMBEDDING_BASE_URL, "/v1/embeddings"), json=payload, headers=_auth()
         )
     if response.status_code != 200:
+        _log.warning("embedding http %s", response.status_code)
         raise ProviderError(f"向量接口返回 {response.status_code}：{detail(response)}")
     body = response.json()
     items = body.get("data") if isinstance(body, dict) else None
@@ -45,7 +63,9 @@ def embed(texts: list[str], timeout: float = 30) -> list[list[float]]:
         ]
     if sorted(ordered) != list(range(len(cleaned))):
         ordered = {position: item["embedding"] for position, item in enumerate(items)}
-    return [ordered[position] for position in range(len(cleaned))]
+    result = [ordered[position] for position in range(len(cleaned))]
+    _log.info("embedding %d texts dim=%d ms=%d", len(cleaned), len(result[0]), round((time.perf_counter() - started) * 1000))
+    return result
 
 
 def embed_batched(texts: list[str], timeout: float = 60) -> list[list[float]]:

@@ -62,9 +62,7 @@ def _payload_text(body: object) -> str:
     return ""
 
 
-def transcribe(filename: str, data: bytes) -> str:
-    if not available():
-        raise ProviderError("未配置 ASR（ASR_PROVIDER）")
+def _post_audio(filename: str, data: bytes, timeout: float = 300, connect: float = 10):
     headers = (
         {"Authorization": f"Bearer {config.ASR_API_KEY}"} if config.ASR_API_KEY else {}
     )
@@ -75,8 +73,68 @@ def transcribe(filename: str, data: bytes) -> str:
     else:
         url = api_url(_base(), "/v1/audio/transcriptions")
         payload = {"model": config.ASR_MODEL}
-    with client(300) as http:
-        response = http.post(url, files=files, data=payload, headers=headers)
+    with client(timeout, connect=connect) as http:
+        return http.post(url, files=files, data=payload, headers=headers)
+
+
+def _silence_wav(seconds: float = 0.4, rate: int = 16000) -> bytes:
+    import io
+    import wave
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(b"\x00\x00" * int(seconds * rate))
+    return buffer.getvalue()
+
+
+def probe() -> dict:
+    """调试面板用：送一段静音 WAV，只看接口是否按约定接住；空转写属正常。"""
+    import time
+
+    if not available():
+        return {"ok": False, "state": "warn", "ms": 0, "detail": "未配置 ASR（ASR_PROVIDER）"}
+    started = time.perf_counter()
+    try:
+        response = _post_audio("probe.wav", _silence_wav(), timeout=20, connect=3)
+    except Exception as error:
+        # 连接层没回应：可能未启动、端口不通或网络问题，统一记为「不可达」
+        state = "warn" if type(error).__name__.startswith(("Connect", "ReadTimeout")) else "error"
+        return {
+            "ok": False,
+            "state": state,
+            "ms": round((time.perf_counter() - started) * 1000),
+            "detail": f"{type(error).__name__}: {error}",
+        }
+    ms = round((time.perf_counter() - started) * 1000)
+    if response.status_code != 200:
+        state = "warn" if response.status_code in (409, 503) else "error"
+        return {
+            "ok": False,
+            "state": state,
+            "ms": ms,
+            "detail": f"HTTP {response.status_code}：{detail(response)[:160]}",
+        }
+    try:
+        body: object = response.json()
+    except ValueError:
+        body = response.text
+    text = _payload_text(body).strip()
+    return {
+        "ok": True,
+        "state": "ok",
+        "ms": ms,
+        "detail": f"HTTP 200，静音样本识别 {len(text)} 字（空文本正常）" if not text else f"HTTP 200，识别到 {len(text)} 字",
+        "text": text[:60],
+    }
+
+
+def transcribe(filename: str, data: bytes) -> str:
+    if not available():
+        raise ProviderError("未配置 ASR（ASR_PROVIDER）")
+    response = _post_audio(filename, data)
     if response.status_code != 200:
         raise ProviderError(f"ASR 返回 {response.status_code}：{detail(response)}")
     try:
