@@ -12,7 +12,7 @@ Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Rec
 
 ## Project status
 
-This is a **community snapshot (v0.1.2)**, not a continuously maintained product.
+This is a **community snapshot (v0.1.3)**, not a continuously maintained product.
 
 - The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted path has been smoke-tested.
 - **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
@@ -93,7 +93,7 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 | `DEEPSEEK_API_KEY` | Automatically points LLM, ASR and the DeepSeek OCR profile at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
 | `LLM_PROVIDER` | `anthropic` (default, `POST /v1/messages`) or `openai` (`POST /v1/chat/completions`, e.g. Ollama, LM Studio, vLLM). Search, citations, thinking, attachments, titles and compression behave the same under both; see [docs/providers.md](docs/providers.md#the-two-llm-protocols) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Model endpoint for the self-hosted backend; Anthropic-compatible accepts a prefix like `/anthropic` or a full `/v1/messages` endpoint, OpenAI-compatible accepts a root, a URL ending in `/v1`, or a full endpoint |
-| `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
+| `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
 | `LLM_EXTRA_BODY` | Extra request-body fields as a JSON object, shallow-merged into the upstream request (both protocols); `messages` and `stream` are generated locally and ignored if present. **Only works from `.env` or system environment variables** — not exposed in the wizard |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
@@ -154,9 +154,10 @@ LLM, search, ASR and attachment parsing are configured independently:
 
 ### UI and configuration
 
-- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Advanced always shows two groups: rerank (base URL / API key / model, shared by search and advanced memory retrieval) and embedding (URL / key / model / dimensions, used only by advanced memory retrieval). Read-aloud is configured there as well.
+- **First-run wizard:** choose DeepSeek Cloud or a custom backend first; Cloud finishes as soon as the key is saved and jumps to data management. Custom goes through model → optional features (search, attachment parsing, voice, rerank and embeddings), and every later step can be skipped; rerank, embedding and read-aloud live in that flow. Saving takes effect immediately, and you can reopen it from Settings → General.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
-- **Debug panel:** click the sidebar title five times within 1.5 s. Status shows configuration and vector coverage per service; Logs shows the last 800 backend lines including request timings; Probes make one real request to LLM / Embedding / Rerank / Search / memory retrieval / speech input / read-aloud and report result and latency.
+- **Usage statistics:** Settings → Usage. Totals for requests, input / cache-read / output tokens, cache hit rate and estimated cost over 7 / 30 / 90 days, broken down by model; unit prices are per million tokens and 0 means free. Chat requests only, stored in the local `chat.db`.
+- **Debug panel:** click the sidebar title five times within 1.5 s. Status shows configuration and vector coverage per service, plus the active prompt card and its length, the memory similarity threshold, the enabled search engine count and the read-aloud voice; Logs shows the last 800 backend lines including request timings; Probes make one real request to LLM / Embedding / Rerank / Search / memory retrieval / speech input / read-aloud and report result and latency.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
 
 ## Capability matrix
@@ -178,6 +179,7 @@ Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `en
 - OpenAI-compatible OCR handles images only; PDF/Word/PPT are parsed locally by default, scans need DeepSeek OCR, and legacy `.doc` files should be saved as `.docx`.
 - Import/export currently supports only the DeepSeek export format.
 - Read-aloud has not been verified by listening on either path; whether self-hosted read-aloud works depends on your service actually implementing `/v1/audio/speech`.
+- Usage statistics cover chat requests only; title generation, attachment parsing, embeddings and rerank are excluded, and unit prices are estimates rather than your provider's bill.
 - The two known SearXNG pitfalls (Brave jump links, upstream engine rate limits) are documented in [docs/search.md](docs/search.md#two-known-sources-of-dirty-data).
 
 ## Security and privacy

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  IconChartOutline16,
   IconDarkOutline16,
   IconDataOutline16,
   IconDownloadOutline16,
@@ -58,6 +59,7 @@ import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import { MemorySettingsPanel } from './MemorySettingsPanel.js'
 import { PromptsSettingsPanel } from './PromptsSettingsPanel.js'
+import { UsageSettingsPanel } from './UsageSettingsPanel.js'
 import styles from './Settings.module.css'
 
 /**
@@ -78,6 +80,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
   { value: 'memory', label: 'settingDialogAsideMemoryOptionLabel', icon: <IconThinkOutline16 /> },
   { value: 'prompts', label: 'settingDialogAsidePromptOptionLabel', icon: <IconEditOutline16 /> },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'usage', label: 'settingDialogAsideUsageOptionLabel', icon: <IconChartOutline16 /> },
 ]
 
 const SettingsContent = () => {
@@ -155,6 +158,8 @@ const SettingsContent = () => {
             <MemorySettingsPanel />
           ) : section === 'prompts' ? (
             <PromptsSettingsPanel />
+          ) : section === 'usage' ? (
+            <UsageSettingsPanel />
           ) : (
             <>
               {mode === 'cloud' ? <ApiKeyField editor={apiKeyEditor} /> : null}

@@ -183,6 +183,11 @@ export const DebugPanel = () => {
                   <Row label="output limit" value={status.app.output_limit.toLocaleString()} />
                   <Row label="data dir" value={status.app.data_dir} />
                 </Card>
+                <Card title="Prompts" ok>
+                  <Row label="cards" value={status.prompts.cards} />
+                  <Row label="active" value={status.prompts.active || '—'} />
+                  <Row label="chars" value={status.prompts.chars.toLocaleString()} />
+                </Card>
                 <Card title="LLM" ok={status.llm.configured}>
                   <Row label="provider" value={status.llm.provider} />
                   <Row label="model" value={status.llm.model || t('debugNotConfigured')} />
@@ -203,6 +208,7 @@ export const DebugPanel = () => {
                   <Row label="vector dim" value={status.memory.vector_dim || '-'} />
                   <Row label="inject" value={`${status.memory.inject_mode} / ${status.memory.inject_count}`} />
                   <Row label="search" value={status.memory.search_mode} />
+                  <Row label="threshold" value={status.memory.sim_threshold} />
                   <Row label="pending" value={status.memory.pending} />
                   <Row label={t('debugLastError')} value={status.memory.last_error || '-'} ok={!status.memory.last_error} />
                 </Card>
@@ -224,6 +230,11 @@ export const DebugPanel = () => {
                   <Row label="provider" value={status.search.provider} />
                   <Row label="available" value={yes(status.search.available)} ok={status.search.available} />
                   <Row label="base" value={status.search.base || '-'} />
+                  <Row
+                    label="engines"
+                    value={status.search.engines.probed ? status.search.engines.engines : '—'}
+                    ok={status.search.engines.probed ? status.search.engines.ok === true : undefined}
+                  />
                 </Card>
                 <Card title="ASR / OCR / TTS · configured">
                   <Row label="asr" value={`${String(status.asr.provider)} · ${yes(Boolean(status.asr.ok))}`} ok={Boolean(status.asr.ok)} />
@@ -232,7 +243,11 @@ export const DebugPanel = () => {
                     value={`img:${String(status.ocr.image)} · doc:${String(status.ocr.document)}`}
                     ok={Boolean(status.ocr.ok)}
                   />
-                  <Row label="tts" value={`${String(status.tts.provider)} · ${yes(Boolean(status.tts.ok))}`} ok={Boolean(status.tts.ok)} />
+                  <Row
+                    label="tts"
+                    value={`${String(status.tts.provider)} · ${yes(Boolean(status.tts.ok))}${status.tts.voice ? ` · ${status.tts.voice}` : ''}`}
+                    ok={Boolean(status.tts.ok)}
+                  />
                 </Card>
               </div>
             )

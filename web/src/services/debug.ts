@@ -40,6 +40,7 @@ export type DebugStatus = {
     available: boolean
     base: string
     searxng: boolean
+    engines: { engines: number; probed: boolean; ok: boolean | null }
   }
   memory: {
     enabled: boolean
@@ -53,15 +54,17 @@ export type DebugStatus = {
     inject_mode: string
     inject_count: number
     search_mode: string
+    sim_threshold: number
     tools: boolean
     write: string
     embedding_configured: boolean
     rerank_configured: boolean
     last_error: string
   }
-  asr: Record<string, unknown>
-  ocr: Record<string, unknown>
-  tts: Record<string, unknown>
+  prompts: { cards: number; active: string; chars: number }
+  asr: { ok?: boolean; provider?: string } & Record<string, unknown>
+  ocr: { ok?: boolean; image?: string; document?: string } & Record<string, unknown>
+  tts: { ok?: boolean; provider?: string; voice?: string } & Record<string, unknown>
 }
 
 export type DebugProbeResult = {

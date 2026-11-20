@@ -12,7 +12,7 @@
 
 ## 项目状态
 
-这是一个**社区快照（v0.1.2）**，不是持续维护的产品。
+这是一个**社区快照（v0.1.3）**，不是持续维护的产品。
 
 - 界面、消息协议和 DeepSeek 云端路径继承自 [chat-demo](https://github.com/deepseek-ai/chat-demo)，核心功能保留；自建后端路径做过冒烟测试。
 - **未经过广泛测试**：DeepSeek 云端、ASR、OCR、TTS、不同模型服务和不同操作系统上的表现，主要交给社区验证。
@@ -93,7 +93,7 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 | `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR 与 DeepSeek 版 OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
 | `LLM_PROVIDER` | `anthropic`（默认，`POST /v1/messages`）/ `openai`（`POST /v1/chat/completions`，可接 Ollama、LM Studio、vLLM 等）。两种协议下搜索、引用、思考、附件、标题、压缩行为一致，细节见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#对话模型的两条协议) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的模型接口；Anthropic 兼容填 `/anthropic` 这类前缀或完整的 `/v1/messages` 地址，OpenAI 兼容填根地址、`/v1` 结尾或完整接口地址 |
-| `LLM_HEADERS` | 额外请求头，JSON 对象。占位符：`{key}` 引用 `LLM_API_KEY`，`{session}` 是当前对话 ID（形如 `ses_...`），`{model}` 是模型名。用于 Azure 自定义鉴权、身份声明和会话 ID（例如 `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`）；自定义头会覆盖同名默认头 |
+| `LLM_HEADERS` | 额外请求头，JSON 对象。占位符：`{key}` 引用 `LLM_API_KEY`，`{session}` 是当前对话 ID（形如 `ses_...`），`{model}` 是模型名。用于 Azure 自定义鉴权、身份声明和会话 ID（例如 `{"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}`）；自定义头会覆盖同名默认头 |
 | `LLM_EXTRA_BODY` | 额外请求体字段，JSON 对象，浅合并进上游请求体（两种协议通用）；`messages` 与 `stream` 由本机生成，写了也会忽略。**只对 `.env` 或系统环境变量生效**，向导里没有这一项 |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
@@ -154,9 +154,10 @@ LLM、搜索、ASR、附件解析分别配置，互不绑定：
 
 ### 界面与配置
 
-- **首次运行向导**：两种模式都能进入，但只负责写自建后端的配置。高级里常驻两组输入：重排（Base URL / API Key / 模型名，搜索与记忆高级检索共用）和 Embedding（地址 / Key / 模型 / 维度，只给记忆高级检索用）；还能配朗读的 provider、地址、key、模型、音色与返回格式。
+- **首次运行向导**：第一步选 DeepSeek 云端或自定义后端；云端填好 Key 即完成并跳到数据管理。自定义依次配置模型 → 可选功能（搜索、附件解析、语音、重排与向量），之后每一步都能跳过；重排、Embedding 与朗读也在这一步里展开。保存后立即生效，之后可从 设置 → 通用设置 重新打开。
 - **能力探测**：没配置的搜索、ASR 等入口自动隐藏。
-- **调试面板**：侧栏标题 1.5 秒内连点 5 次打开。状态页看各服务和向量库的配置与覆盖情况，日志页看后端最近 800 行（含请求与耗时），探针页会真实请求一次 LLM / Embedding / Rerank / 搜索 / 记忆检索 / 语音输入 / 朗读并显示结果与耗时。
+- **使用统计**：设置 → 使用统计。汇总请求数、输入 / 缓存读取 / 输出 tokens、缓存命中率与估算费用，可按 7 / 30 / 90 天查看并按模型拆分；单价按每百万 tokens 自行填写（0 表示不计费）。只统计对话请求，记录存在本机 `chat.db`。
+- **调试面板**：侧栏标题 1.5 秒内连点 5 次打开。状态页看各服务和向量库的配置与覆盖情况，也显示提示词生效卡与字数、记忆相关度门槛、搜索启用引擎数和朗读音色；日志页看后端最近 800 行（含请求与耗时），探针页会真实请求一次 LLM / Embedding / Rerank / 搜索 / 记忆检索 / 语音输入 / 朗读并显示结果与耗时。
 - **界面修复**：深色模式下拉框、会话菜单定位、清理统计等问题。
 
 ## 能力对照
@@ -178,6 +179,7 @@ LLM、搜索、ASR、附件解析分别配置，互不绑定：
 - OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 默认本地解析，扫描件需要 DeepSeek OCR，老 `.doc` 请先另存为 `.docx`。
 - 导入/导出目前只支持 DeepSeek 导出格式。
 - 朗读（云端与自建）都未做真机试听验证，属于「未经过广泛测试」的范围；自建朗读能不能出声，取决于你接的服务是否实现了 `/v1/audio/speech`。
+- 使用统计只覆盖对话请求，标题生成、附件解析、向量与重排等后台调用不计入；单价只用于估算，以服务商账单为准。
 - SearXNG 的两类已知问题（Brave 跳转链、上游引擎限流）见 [docs/search.zh-CN.md](docs/search.zh-CN.md#已知的两类脏数据)。
 
 ## 安全与隐私

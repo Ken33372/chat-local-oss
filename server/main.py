@@ -17,6 +17,7 @@ import memory
 import prompts
 import setup_store
 import storage
+import usage
 from providers import asr as asr_provider
 from providers import extract as extract_provider
 from providers import llm as llm_provider
@@ -24,9 +25,10 @@ from providers import ocr as ocr_provider
 from providers import search
 from providers import tts as tts_provider
 
-app = FastAPI(title="chat-local", version="0.1.2")
+app = FastAPI(title="chat-local", version="0.1.3")
 storage.init()
 memory.init()
+usage.init()
 debug_panel.install()
 
 
@@ -673,6 +675,36 @@ async def prompts_patch(request: Request) -> dict:
         return prompts.save(body)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+# ---------------- 使用统计 ----------------
+
+@app.post("/api/usage/record")
+async def usage_record(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    try:
+        return usage.record(body)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/usage/summary")
+def usage_summary(days: int = 30) -> dict:
+    return usage.summary(days)
+
+
+@app.patch("/api/usage/pricing")
+async def usage_pricing(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    return usage.save_pricing(body)
+
+
+@app.post("/api/usage/clear")
+def usage_clear(request: Request) -> dict:
+    guard(request)
+    return usage.clear()
 
 
 # ---------------- 调试面板 ----------------

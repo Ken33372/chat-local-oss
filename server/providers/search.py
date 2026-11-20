@@ -464,13 +464,29 @@ def _rerank_info() -> dict:
     return info
 
 
+_ENGINE_CACHE = {"ts": 0.0, "engines": 0, "ok": False}
+_ENGINE_TTL = 60.0
+
+
+def _engines() -> dict:
+    """启用引擎数：/config 很轻，但仍缓存 60 秒，避免状态轮询反复打网络。"""
+    if _provider() != "searxng" or not _available():
+        return {"engines": 0, "probed": False, "ok": None}
+    now = time.time()
+    if now - _ENGINE_CACHE["ts"] >= _ENGINE_TTL:
+        info = _searxng_probe()
+        _ENGINE_CACHE.update({"ts": now, "engines": int(info.get("engines") or 0), "ok": info["ok"]})
+    return {"engines": _ENGINE_CACHE["engines"], "probed": True, "ok": _ENGINE_CACHE["ok"]}
+
+
 def status() -> dict:
-    """调试面板用：不联网，只报配置与重排已有的探测结果。"""
+    """调试面板用：只报配置与已有探测结果；引擎数每 60 秒最多探一次 /config。"""
     return {
         "provider": _provider(),
         "available": _available(),
         "base": _base() if _available() else "",
         "searxng": _provider() == "searxng",
+        "engines": _engines(),
         "rerank": dict(rerank_provider.status()),
     }
 

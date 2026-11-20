@@ -142,7 +142,7 @@ LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.example.com/v1
 LLM_MODEL=your-model
 LLM_API_KEY=sk-xxx
-LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}
 ```
 
 Every request for the same conversation (chat, tool rounds, auto title, compression) carries the same `ses_...`.

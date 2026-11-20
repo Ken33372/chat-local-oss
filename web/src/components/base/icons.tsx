@@ -82,6 +82,15 @@ export const IconDataOutline16 = () => (
   </svg>
 )
 
+export const IconChartOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2.5 13.5H13.5" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" />
+    <rect x="3.5" y="8" width="2" height="4.5" rx="0.6" fill="currentColor" />
+    <rect x="7" y="5" width="2" height="7.5" rx="0.6" fill="currentColor" />
+    <rect x="10.5" y="2.5" width="2" height="10" rx="0.6" fill="currentColor" />
+  </svg>
+)
+
 export const IconUploadOutline14 = () => (
   <svg width={14} height={14} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

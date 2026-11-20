@@ -6,6 +6,7 @@ import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/er
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
 import { buildCompressionInput, requestCompression } from '../context.js'
+import { recordUsage } from '../usage.js'
 import { useCapabilities } from '../capabilities.js'
 import { appendBranch, dropCompressed, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
@@ -1314,6 +1315,20 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    const used = reply.usage
+    if (
+      used &&
+      used.input_tokens + used.cache_creation_input_tokens + used.cache_read_input_tokens + used.output_tokens >
+        0
+    ) {
+      void recordUsage({
+        id: createId(),
+        sessionId,
+        model: reply.model ?? initial.model ?? MODEL,
+        mode: useSettings.getState().mode,
+        usage: used,
+      })
+    }
     if (autoTitleEligible && reply.status === 'done') {
       void maybeGenerateTitle(sessionId, request.question, reply)
     }

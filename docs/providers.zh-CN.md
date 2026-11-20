@@ -143,7 +143,7 @@ LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.example.com/v1
 LLM_MODEL=your-model
 LLM_API_KEY=sk-xxx
-LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}
 ```
 
 同一对话的所有请求（正文、工具轮次、自动标题、上下文压缩）都会带同一个 `ses_...`。

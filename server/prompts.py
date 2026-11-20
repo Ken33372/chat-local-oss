@@ -119,6 +119,19 @@ def save(body: dict) -> dict:
     return state
 
 
+def stats() -> dict:
+    """调试面板用：当前生效卡片与正文长度。"""
+    state = load()
+    name = ""
+    chars = 0
+    for card in state["cards"]:
+        if card["id"] == state["active"]:
+            name = card["name"]
+            chars = len(card["text"])
+            break
+    return {"cards": len(state["cards"]), "active": name, "chars": chars}
+
+
 def active_text() -> str:
     state = load()
     active = state["active"]

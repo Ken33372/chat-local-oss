@@ -168,6 +168,7 @@ def stats() -> dict:
         "inject_mode": config.MEMORY_INJECT_MODE,
         "inject_count": config.MEMORY_INJECT_COUNT,
         "search_mode": config.MEMORY_SEARCH_MODE,
+        "sim_threshold": config.MEMORY_SIM_THRESHOLD,
         "tools": bool(config.MEMORY_TOOLS),
         "write": config.MEMORY_WRITE,
         "embedding_configured": embedding_provider.configured(),

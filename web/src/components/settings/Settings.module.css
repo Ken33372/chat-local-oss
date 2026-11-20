@@ -1013,3 +1013,115 @@
 .memorySettings[open] > summary::after {
   content: '▴';
 }
+
+.usageRange {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.usageRangeButton,
+.usageRangeActive {
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.usageRangeActive {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.usageCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.usageCard {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.usageCardLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.usageCardValue {
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usageTableWrap {
+  overflow-x: auto;
+}
+
+.usageTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usageTable th {
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.usageTable td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  color: var(--dsw-alias-label-primary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.usageTable th:first-child,
+.usageTable td:first-child {
+  text-align: left;
+}
+
+.usageModelCell {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usagePriceFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.usagePriceField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+.usagePriceField .memoryInput {
+  width: 120px;
+  flex: none;
+}
+
+@media (max-width: 560px) {
+  .usageCards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

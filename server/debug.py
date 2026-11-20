@@ -13,6 +13,7 @@ from threading import Lock
 
 import config
 import memory
+import prompts as prompts_store
 from providers import asr as asr_provider
 from providers import embedding as embedding_provider
 from providers import llm as llm_provider
@@ -96,6 +97,7 @@ def status() -> dict:
         "rerank": rerank_provider.status(),
         "search": search.status(),
         "memory": memory.stats(),
+        "prompts": prompts_store.stats(),
         "asr": asr_provider.health(),
         "ocr": ocr_provider.health(),
         "tts": tts_provider.health(),

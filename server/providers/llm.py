@@ -310,8 +310,11 @@ def _map_usage(usage: object) -> dict:
         except (TypeError, ValueError):
             cached = 0
     try:
+        # OpenAI 的 prompt_tokens 包含命中缓存的 token；对外统一成 Anthropic 口径：
+        # input 只放未命中部分，缓存命中单列，避免用量与费用重复计算。
+        prompt = int(usage.get("prompt_tokens") or 0)
         return {
-            "input_tokens": int(usage.get("prompt_tokens") or 0),
+            "input_tokens": max(0, prompt - cached),
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": cached,
             "output_tokens": int(usage.get("completion_tokens") or 0),

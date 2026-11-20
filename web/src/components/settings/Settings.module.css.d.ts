@@ -70,6 +70,18 @@ declare const styles: {
   readonly "memoryEditorMeta": string;
   readonly "memoryEditorActions": string;
   readonly "memorySettings": string;
+  readonly "usageRange": string;
+  readonly "usageRangeButton": string;
+  readonly "usageRangeActive": string;
+  readonly "usageCards": string;
+  readonly "usageCard": string;
+  readonly "usageCardLabel": string;
+  readonly "usageCardValue": string;
+  readonly "usageTableWrap": string;
+  readonly "usageTable": string;
+  readonly "usageModelCell": string;
+  readonly "usagePriceFields": string;
+  readonly "usagePriceField": string;
 };
 export = styles;
 
