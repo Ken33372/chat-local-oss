@@ -22,6 +22,7 @@ from typing import AsyncGenerator
 import httpx
 
 import config
+from providers import llm
 from providers import ocr as ocr_provider
 from providers import search
 import storage
@@ -87,15 +88,7 @@ TOOLS = [
 ]
 
 
-class UpstreamError(RuntimeError):
-    pass
-
-
-def _llm_headers() -> dict[str, str]:
-    headers = {"anthropic-version": "2023-06-01", "Content-Type": "application/json"}
-    if config.LLM_API_KEY:
-        headers["x-api-key"] = config.LLM_API_KEY
-    return headers
+UpstreamError = llm.LLMError
 
 
 
@@ -422,7 +415,7 @@ def _clean_generated_title(text: str) -> str:
     return title[:30].strip()
 
 
-async def generate_title(user: str, assistant: str) -> str:
+async def generate_title(user: str, assistant: str, session_id: str = "") -> str:
     if not config.LLM_BASE_URL or not config.LLM_MODEL:
         raise UpstreamError("未配置模型接口，无法生成标题")
     prompt = (
@@ -430,29 +423,8 @@ async def generate_title(user: str, assistant: str) -> str:
         f"助手第一条回复：\n{assistant[:6000].strip()}\n\n"
         "请生成标题。"
     )
-    payload = {
-        "model": config.LLM_MODEL,
-        "system": _TITLE_SYSTEM,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 48,
-        "temperature": 0.2,
-        "stream": False,
-        "thinking": {"type": "disabled"},
-    }
-    async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(20, connect=5)) as client:
-        response = await client.post(
-            f"{config.LLM_BASE_URL.rstrip('/')}/v1/messages",
-            headers=_llm_headers(),
-            json=payload,
-        )
-    if response.status_code != 200:
-        raise UpstreamError(f"标题接口返回 {response.status_code}：{response.text[:300]}")
-    body = response.json()
-    blocks = body.get("content") if isinstance(body, dict) else None
-    text = "".join(
-        str(block.get("text") or "")
-        for block in blocks or []
-        if isinstance(block, dict) and block.get("type") == "text"
+    text = await llm.complete(
+        _TITLE_SYSTEM, prompt, max_tokens=48, temperature=0.2, timeout=20, session=session_id
     )
     return _clean_generated_title(text)
 
@@ -685,6 +657,7 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     if not config.LLM_BASE_URL or not config.LLM_MODEL:
         raise UpstreamError("未配置模型接口：请在 .env 填写 LLM_BASE_URL 与 LLM_MODEL")
     raw_messages = body.get("messages") or []
+    session = str(body.get("session_id") or "").strip()
     image_mode = str(body.get("image_mode") or config.IMAGE_MODE)
     messages, reminder = await _prepare_messages(raw_messages, force_ocr=image_mode == "ocr")
     has_image = _has_image(raw_messages)
@@ -756,114 +729,96 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                 text_streams: dict[int, dict] = {}
                 stop_reason = "end_turn"
                 round_usage: dict | None = None
-                async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(None, connect=15)) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{config.LLM_BASE_URL}/v1/messages",
-                        json={**payload_base, "messages": current},
-                        headers=_llm_headers(),
-                    ) as response:
-                        if response.status_code != 200:
-                            detail = (await response.aread()).decode("utf-8", errors="replace")
-                            raise UpstreamError(f"模型接口返回 {response.status_code}：{detail[:400]}")
-                        async for line in response.aiter_lines():
-                            if not line.startswith("data:"):
-                                continue
-                            try:
-                                event = json.loads(line[5:].strip())
-                            except json.JSONDecodeError:
-                                continue
-                            kind = event.get("type")
-                            if kind in ("ping", None):
-                                continue
-                            if kind == "message_start":
-                                round_usage = (event.get("message") or {}).get("usage") or round_usage
-                                continue
-                            if kind == "content_block_start":
-                                block = event.get("content_block") or {}
-                                if block.get("type") == "tool_use":
-                                    calls.append(
-                                        {
-                                            "index": event.get("index"),
-                                            "id": block.get("id"),
-                                            "name": block.get("name") or "",
-                                            "input": {},
-                                            "json": "",
-                                        }
-                                    )
-                                elif block.get("type") == "text":
-                                    state = {"out": alloc(), "buf": ""}
-                                    text_streams[event.get("index")] = state
-                                    yield _text_start(state["out"])
-                                    initial = block.get("text") or ""
-                                    if initial:
-                                        for chunk in _split_text(initial, state, registry, alloc):
-                                            yield chunk
-                                else:
-                                    index_map[event.get("index")] = alloc()
-                                    yield sse(
-                                        "content_block_start",
-                                        {
-                                            "type": "content_block_start",
-                                            "index": index_map[event.get("index")],
-                                            "content_block": block,
-                                        },
-                                    )
-                                continue
-                            if kind == "content_block_delta":
-                                delta = event.get("delta") or {}
-                                state = text_streams.get(event.get("index"))
-                                if state is not None:
-                                    if delta.get("type") == "text_delta":
-                                        piece = delta.get("text") or ""
-                                        round_text.append(piece)
-                                        for chunk in _split_text(piece, state, registry, alloc):
-                                            yield chunk
-                                    continue
-                                target = index_map.get(event.get("index"))
-                                if target is None:
-                                    call = next(
-                                        (item for item in calls if item["index"] == event.get("index")),
-                                        None,
-                                    )
-                                    if call is not None and delta.get("type") == "input_json_delta":
-                                        call["json"] += delta.get("partial_json") or ""
-                                    continue
-                                if delta.get("type") == "text_delta":
-                                    round_text.append(delta.get("text") or "")
-                                yield sse(
-                                    "content_block_delta",
-                                    {
-                                        "type": "content_block_delta",
-                                        "index": target,
-                                        "delta": delta,
-                                    },
-                                )
-                                continue
-                            if kind == "content_block_stop":
-                                state = text_streams.pop(event.get("index"), None)
-                                if state is not None:
-                                    if state["buf"]:
-                                        yield _text_delta(state["out"], state["buf"])
-                                        state["buf"] = ""
-                                    yield _block_stop(state["out"])
-                                    continue
-                                target = index_map.pop(event.get("index"), None)
-                                if target is not None:
-                                    yield sse(
-                                        "content_block_stop",
-                                        {"type": "content_block_stop", "index": target},
-                                    )
-                                continue
-                            if kind == "message_delta":
-                                delta = event.get("delta") or {}
-                                stop_reason = delta.get("stop_reason") or "end_turn"
-                                round_usage = event.get("usage") or round_usage
-                                continue
-                            if kind == "message_stop":
-                                break
-                            if kind == "error":
-                                raise UpstreamError(str((event.get("error") or {}).get("message") or event))
+                async for event in llm.stream({**payload_base, "messages": current}, session=session):
+                    kind = event.get("type")
+                    if kind in ("ping", None):
+                        continue
+                    if kind == "message_start":
+                        round_usage = (event.get("message") or {}).get("usage") or round_usage
+                        continue
+                    if kind == "content_block_start":
+                        block = event.get("content_block") or {}
+                        if block.get("type") == "tool_use":
+                            calls.append(
+                                {
+                                    "index": event.get("index"),
+                                    "id": block.get("id"),
+                                    "name": block.get("name") or "",
+                                    "input": {},
+                                    "json": "",
+                                }
+                            )
+                        elif block.get("type") == "text":
+                            state = {"out": alloc(), "buf": ""}
+                            text_streams[event.get("index")] = state
+                            yield _text_start(state["out"])
+                            initial = block.get("text") or ""
+                            if initial:
+                                for chunk in _split_text(initial, state, registry, alloc):
+                                    yield chunk
+                        else:
+                            index_map[event.get("index")] = alloc()
+                            yield sse(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": index_map[event.get("index")],
+                                    "content_block": block,
+                                },
+                            )
+                        continue
+                    if kind == "content_block_delta":
+                        delta = event.get("delta") or {}
+                        state = text_streams.get(event.get("index"))
+                        if state is not None:
+                            if delta.get("type") == "text_delta":
+                                piece = delta.get("text") or ""
+                                round_text.append(piece)
+                                for chunk in _split_text(piece, state, registry, alloc):
+                                    yield chunk
+                            continue
+                        target = index_map.get(event.get("index"))
+                        if target is None:
+                            call = next(
+                                (item for item in calls if item["index"] == event.get("index")),
+                                None,
+                            )
+                            if call is not None and delta.get("type") == "input_json_delta":
+                                call["json"] += delta.get("partial_json") or ""
+                            continue
+                        if delta.get("type") == "text_delta":
+                            round_text.append(delta.get("text") or "")
+                        yield sse(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": target,
+                                "delta": delta,
+                            },
+                        )
+                        continue
+                    if kind == "content_block_stop":
+                        state = text_streams.pop(event.get("index"), None)
+                        if state is not None:
+                            if state["buf"]:
+                                yield _text_delta(state["out"], state["buf"])
+                                state["buf"] = ""
+                            yield _block_stop(state["out"])
+                            continue
+                        target = index_map.pop(event.get("index"), None)
+                        if target is not None:
+                            yield sse(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": target},
+                            )
+                        continue
+                    if kind == "message_delta":
+                        delta = event.get("delta") or {}
+                        stop_reason = delta.get("stop_reason") or "end_turn"
+                        round_usage = event.get("usage") or round_usage
+                        continue
+                    if kind == "message_stop":
+                        break
                 for state in text_streams.values():
                     if state["buf"]:
                         yield _text_delta(state["out"], state["buf"])
@@ -987,7 +942,7 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     return gen()
 
 
-async def compress(transcript: str, previous_summary: str = "") -> str:
+async def compress(transcript: str, previous_summary: str = "", session_id: str = "") -> str:
     """把较早的对话压成摘要；输入过长时由前端截断。"""
     transcript = transcript.strip()
     if not transcript:
@@ -1001,27 +956,13 @@ async def compress(transcript: str, previous_summary: str = "") -> str:
     user = transcript
     if previous_summary.strip():
         user = f"已有摘要：\n{previous_summary.strip()}\n\n新增对话：\n{transcript}"
-    payload = {
-        "model": config.LLM_MODEL,
-        "system": system,
-        "messages": [{"role": "user", "content": user[:200000]}],
-        "thinking": {"type": "disabled"},
-        "max_tokens": min(1200, config.LLM_MAX_OUTPUT_TOKENS),
-        "stream": False,
-    }
-    async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(600, connect=15)) as client:
-        response = await client.post(
-            f"{config.LLM_BASE_URL}/v1/messages",
-            json=payload,
-            headers=_llm_headers(),
-        )
-    if response.status_code != 200:
-        detail = response.text[:400]
-        raise UpstreamError(f"模型接口返回 {response.status_code}：{detail}")
-    content = response.json().get("content") or []
-    text = "".join(
-        block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"
-    ).strip()
+    text = await llm.complete(
+        system,
+        user[:200000],
+        max_tokens=min(1200, config.LLM_MAX_OUTPUT_TOKENS),
+        timeout=600,
+        session=session_id,
+    )
     if not text:
         raise UpstreamError("摘要为空")
     return text
@@ -1031,26 +972,15 @@ async def health() -> dict:
     configured = bool(config.LLM_BASE_URL and config.LLM_MODEL)
     if not configured:
         return {"ok": False, "configured": False, "models": [], "base": ""}
-    try:
-        async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(3, connect=2)) as client:
-            response = await client.get(f"{config.LLM_BASE_URL}/v1/models", headers=_llm_headers())
-        body = response.json() if response.status_code == 200 else {}
-        models = [item.get("id") for item in body.get("data") or []]
-        # 模型服务可能没有 /v1/models；只要不是连不上/服务端错误，就认为地址可用。
-        return {
-            "ok": response.status_code < 500,
-            "configured": True,
-            "reachable": True,
-            "status": response.status_code,
-            "models": models,
-            "base": config.LLM_BASE_URL,
-        }
-    except Exception as error:
-        return {
-            "ok": False,
-            "configured": True,
-            "reachable": False,
-            "models": [],
-            "base": config.LLM_BASE_URL,
-            "error": str(error),
-        }
+    result = await llm.probe(config.LLM_BASE_URL, config.LLM_API_KEY, llm.provider(), config.LLM_HEADERS)
+    # 模型服务可能没有 /v1/models；只要不是连不上/服务端错误，就认为地址可用。
+    return {
+        "ok": bool(result["ok"]),
+        "configured": True,
+        "reachable": result["status"] != 0,
+        "status": result["status"],
+        "models": result["models"],
+        "base": config.LLM_BASE_URL,
+        "provider": llm.provider(),
+        **({"error": result["detail"]} if not result["ok"] else {}),
+    }

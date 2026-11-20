@@ -4,9 +4,11 @@ export type SetupStatus = {
   configured: boolean
   writable: boolean
   llm: {
+    provider: string
     base_url: string
     model: string
     has_key: boolean
+    header_names: string[]
     context_limit: number
     max_output_tokens: number
   }
@@ -27,9 +29,11 @@ export type SetupStatus = {
 
 export type SetupBody = {
   llm: {
+    provider: string
     base_url: string
     model: string
     api_key: string | null
+    headers: string | null
     context_limit: number
     max_output_tokens: number
   }

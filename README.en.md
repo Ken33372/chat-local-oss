@@ -63,7 +63,7 @@ Windows x64 users can download the portable ZIP from [Releases](https://github.c
 
 ### First run
 
-If nothing is configured yet, the first visit shows a setup wizard: **DeepSeek Cloud** just needs an API key; **self-hosted backend** needs a base URL, API key and model name, with search, ASR, OCR and read-aloud under Advanced. Changes take effect immediately.
+If nothing is configured yet, the first visit shows a setup wizard: **DeepSeek Cloud** just needs an API key; **self-hosted backend** first picks an API protocol (Anthropic-compatible or OpenAI-compatible), then a base URL, API key and model name, with search, ASR, OCR and read-aloud under Advanced. Changes take effect immediately.
 
 If you already configured everything through `.env`, skip the wizard. The precedence of the two sources, the wizard entry point and every variable are documented under [Configuration](#configuration).
 
@@ -91,7 +91,9 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 | Variable | Description |
 |---|---|
 | `DEEPSEEK_API_KEY` | Automatically points LLM, ASR, and OCR at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Anthropic-compatible endpoint for the self-hosted backend |
+| `LLM_PROVIDER` | `anthropic` (default, `POST /v1/messages`) or `openai` (`POST /v1/chat/completions`, e.g. Ollama, LM Studio, vLLM). Search, citations, thinking, attachments, titles and compression behave the same under both; see [docs/providers.md](docs/providers.md#the-two-llm-protocols) |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Model endpoint for the self-hosted backend; Anthropic-compatible uses something like the `/anthropic` endpoint, OpenAI-compatible accepts a root, a URL ending in `/v1`, or a full endpoint |
+| `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | Speech recognition; the OpenAI-compatible default model is `whisper-1`. A root URL, or any URL ending in `/v1` (including prefixed ones such as `/api/v1`), gets `/v1/audio/transcriptions` appended; a full URL is used as-is; responses may be `{text}`, `[{text}]`, `{segments:[{text}]}` or plain text |
@@ -123,11 +125,11 @@ Unconfigured capabilities are hidden in the UI (for example, no ASR means no mic
 
 LLM, search, ASR, and OCR are configured independently:
 
-- **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint).
+- **LLM:** model name, base URL, API key, context limit, and max output are yours to set; the protocol is either Anthropic-compatible (for example, DeepSeek's `/anthropic` endpoint) or OpenAI-compatible (Ollama, LM Studio, vLLM, hosted APIs).
 - **ASR:** DeepSeek `/v1/tools/asr` or an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
 - **OCR:** DeepSeek `/v1/tools/ocr` (documents and images) or an OpenAI-compatible vision endpoint (images only).
 - **Search:** Tavily, AnySearch, SearXNG, or off. With SearXNG you can add your own reranker to enable multi-page aggregation and relevance ordering; without one, search stays single-page.
-- Unconfigured capabilities are hidden automatically. OpenAI-compatible LLMs are not supported yet.
+- Unconfigured capabilities are hidden automatically.
 
 ### Conversations and data
 
@@ -153,7 +155,7 @@ LLM, search, ASR, and OCR are configured independently:
 
 | Capability | DeepSeek Cloud | Self-hosted backend |
 |---|---|---|
-| Chat / thinking / stop / continue | DeepSeek API | Anthropic-compatible endpoint |
+| Chat / thinking / stop / continue | DeepSeek API | Anthropic- or OpenAI-compatible endpoint |
 | Web search and page reading | DeepSeek server-side tools; the tools themselves are not billed | Your configured search provider |
 | Voice input | DeepSeek `/v1/tools/asr` | `deepseek` or OpenAI-compatible ASR |
 | Read-aloud | DeepSeek `/v1/tools/tts` | `deepseek` or OpenAI-compatible `/v1/audio/speech` |
@@ -165,7 +167,6 @@ Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `en
 ## Limitations
 
 - This project has not been broadly tested; see Project status above.
-- The self-hosted LLM currently supports only the Anthropic-compatible protocol (DeepSeek's `/anthropic` endpoint and other compatible services). OpenAI-compatible LLMs are not supported yet.
 - OpenAI-compatible OCR handles images only; use DeepSeek OCR for PDF/Word/PPT or convert them to images first.
 - Import/export currently supports only the DeepSeek export format.
 - Read-aloud has not been verified by listening on either path; whether self-hosted read-aloud works depends on your service actually implementing `/v1/audio/speech`.

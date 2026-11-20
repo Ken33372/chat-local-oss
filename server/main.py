@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import httpx
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -16,6 +15,7 @@ import config
 import setup_store
 import storage
 from providers import asr as asr_provider
+from providers import llm as llm_provider
 from providers import ocr as ocr_provider
 from providers import search
 from providers import tts as tts_provider
@@ -226,9 +226,12 @@ def _masked_status() -> dict:
         "writable": config.HOST in _LOOPBACK_HOSTS,
         "config_file": "data/config.json",
         "llm": {
+            "provider": config.LLM_PROVIDER,
             "base_url": config.LLM_BASE_URL,
             "model": config.LLM_MODEL,
             "has_key": bool(config.LLM_API_KEY),
+            # 只回名称，不回值：自定义头里常带密钥
+            "header_names": sorted(config.LLM_HEADERS),
             "context_limit": config.LLM_CONTEXT_LIMIT,
             "max_output_tokens": config.LLM_MAX_OUTPUT_TOKENS,
         },
@@ -292,25 +295,12 @@ async def setup_test(request: Request) -> dict:
     model = str(llm.get("model") or "")
     if not base or not model:
         raise HTTPException(status_code=400, detail="请填写 Base URL 和模型名")
-    headers = {"anthropic-version": "2023-06-01"}
-    key = str(llm.get("api_key") or "")
-    if key:
-        headers["x-api-key"] = key
-    try:
-        async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(8, connect=5)) as client:
-            response = await client.get(f"{base}/v1/models", headers=headers)
-        models = []
-        if response.status_code == 200:
-            payload = response.json()
-            models = [item.get("id") for item in payload.get("data") or [] if item.get("id")]
-        return {
-            "ok": response.status_code < 500,
-            "status": response.status_code,
-            "models": models,
-            "detail": "" if response.status_code < 500 else response.text[:300],
-        }
-    except Exception as error:
-        return {"ok": False, "status": 0, "models": [], "detail": str(error)}
+    return await llm_provider.probe(
+        base,
+        str(llm.get("api_key") or ""),
+        str(llm.get("provider") or "anthropic"),
+        llm.get("headers") or {},
+    )
 
 
 @app.post("/api/setup/save")
@@ -447,7 +437,11 @@ async def generate_title(request: Request) -> dict:
     if not user and not assistant:
         raise HTTPException(status_code=400, detail="缺少对话内容")
     try:
-        return {"title": await ai.generate_title(user, assistant)}
+        return {
+            "title": await ai.generate_title(
+                user, assistant, str(body.get("session_id") or "").strip()
+            )
+        }
     except ai.UpstreamError as error:
         raise HTTPException(status_code=503, detail=str(error))
 
@@ -463,7 +457,11 @@ async def compress_context(request: Request) -> dict:
     if not transcript.strip():
         raise HTTPException(status_code=400, detail="没有可压缩的内容")
     try:
-        summary = await ai.compress(transcript, str(body.get("previous_summary") or ""))
+        summary = await ai.compress(
+            transcript,
+            str(body.get("previous_summary") or ""),
+            str(body.get("session_id") or "").strip(),
+        )
     except ai.UpstreamError as error:
         raise HTTPException(status_code=503, detail=str(error))
     return {"summary": summary}

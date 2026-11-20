@@ -20,8 +20,10 @@ import styles from './SetupWizard.module.css'
 const DISMISSED = 'chat-local:setup-dismissed'
 
 type Form = {
+  llmProvider: string
   baseUrl: string
   apiKey: string
+  llmHeaders: string
   model: string
   contextLimit: string
   maxOutput: string
@@ -49,8 +51,10 @@ type Form = {
 }
 
 const emptyForm: Form = {
+  llmProvider: 'anthropic',
   baseUrl: '',
   apiKey: '',
+  llmHeaders: '',
   model: '',
   contextLimit: '131072',
   maxOutput: '8192',
@@ -78,8 +82,10 @@ const emptyForm: Form = {
 }
 
 const formFromStatus = (status: SetupStatus): Form => ({
+  llmProvider: status.llm.provider ?? 'anthropic',
   baseUrl: status.llm.base_url,
   apiKey: '',
+  llmHeaders: '',
   model: status.llm.model,
   contextLimit: String(status.llm.context_limit),
   maxOutput: String(status.llm.max_output_tokens),
@@ -112,9 +118,14 @@ const keepKey = (value: string, hasKey: boolean): string | null =>
 
 const bodyFrom = (form: Form, status: SetupStatus | null): SetupBody => ({
   llm: {
+    provider: form.llmProvider,
     base_url: form.baseUrl.trim(),
     model: form.model.trim(),
     api_key: keepKey(form.apiKey, status?.llm.has_key ?? false),
+    headers:
+      form.llmHeaders.trim() === '' && (status?.llm.header_names?.length ?? 0) > 0
+        ? null
+        : form.llmHeaders.trim(),
     context_limit: Number(form.contextLimit) || 131072,
     max_output_tokens: Number(form.maxOutput) || 8192,
   },
@@ -379,15 +390,30 @@ export const SetupWizard = () => {
         </div>
       ) : (
         <div className={styles.form}>
+          <ProviderSelect
+            label={t('setupLlmProtocol')}
+            value={form.llmProvider}
+            options={[
+              { value: 'anthropic', label: t('setupLlmAnthropic') },
+              { value: 'openai', label: t('setupLlmOpenai') },
+            ]}
+            disabled={disabled}
+            onChange={(value) => update('llmProvider', value)}
+          />
           <label className={styles.field}>
             <span className={styles.label}>{t('setupBaseUrl')}</span>
             <input
               className={styles.input}
               value={form.baseUrl}
               disabled={disabled}
-              placeholder="http://127.0.0.1:8000"
+              placeholder={
+                form.llmProvider === 'openai'
+                  ? 'http://127.0.0.1:11434/v1'
+                  : 'https://api.deepseek.com/anthropic'
+              }
               onChange={(event) => update('baseUrl', event.target.value)}
             />
+            <span className={styles.hint}>{t('setupLlmProtocolDesc')}</span>
           </label>
           <label className={styles.field}>
             <span className={styles.label}>{t('setupApiKey')}</span>
@@ -406,9 +432,26 @@ export const SetupWizard = () => {
               className={styles.input}
               value={form.model}
               disabled={disabled}
-              placeholder="deepseek-flash"
+              placeholder={form.llmProvider === 'openai' ? 'qwen3:8b' : 'deepseek-flash'}
               onChange={(event) => update('model', event.target.value)}
             />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.label}>{t('setupLlmHeaders')}</span>
+            <input
+              className={styles.input}
+              value={form.llmHeaders}
+              disabled={disabled}
+              placeholder={
+                (status?.llm.header_names?.length ?? 0) > 0
+                  ? t('setupLlmHeadersSaved', {
+                      names: status?.llm.header_names?.join(', ') ?? '',
+                    })
+                  : '{"api-key": "{key}"}'
+              }
+              onChange={(event) => update('llmHeaders', event.target.value)}
+            />
+            <span className={styles.hint}>{t('setupLlmHeadersHint')}</span>
           </label>
           <label className={styles.field}>
             <span className={styles.label}>{t('setupContextLimit')}</span>

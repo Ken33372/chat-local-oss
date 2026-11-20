@@ -50,6 +50,11 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
     base = _text(llm.get("base_url")).rstrip("/")
     if base and not base.startswith(("http://", "https://")):
         raise ValueError("LLM_BASE_URL 必须以 http:// 或 https:// 开头")
+    provider = _text(llm.get("provider"), 32).lower() or _text(old_llm.get("provider"), 32).lower() or "anthropic"
+    if provider in ("openai-compatible", "openai_compatible", "openai兼容"):
+        provider = "openai"
+    if provider not in ("anthropic", "openai"):
+        raise ValueError("LLM 协议只能是 anthropic（Anthropic 兼容）或 openai（OpenAI 兼容）")
     context_limit = _int(llm.get("context_limit"), old_llm.get("context_limit"), 131072)
     max_output = _int(llm.get("max_output_tokens"), old_llm.get("max_output_tokens"), 8192)
     if context_limit < 1024:
@@ -57,9 +62,11 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
     if max_output < 128 or max_output > context_limit:
         raise ValueError("最大输出需在 128 到上下文上限之间")
     result["llm"] = {
+        "provider": provider,
         "base_url": base,
         "model": _text(llm.get("model"), 200),
         "api_key": _key(llm.get("api_key"), old_llm.get("api_key")),
+        "headers": _header_map(llm.get("headers"), old_llm.get("headers")),
         "context_limit": context_limit,
         "max_output_tokens": max_output,
     }
@@ -99,6 +106,39 @@ def _int(value: object, previous: object, default: int) -> int:
         return int(candidate)
     except (TypeError, ValueError):
         return default
+
+
+def _header_map(value: object, previous: object) -> dict[str, str]:
+    """额外请求头：前端传 JSON 串或对象；空白沿用旧值，{} 表示清空。"""
+    old = previous if isinstance(previous, dict) else None
+    if value is None:
+        return {str(k): str(v) for k, v in (old or {}).items()}
+    if isinstance(value, dict):
+        raw = value
+    else:
+        text = _text(value, 8000)
+        if not text:
+            return {str(k): str(v) for k, v in (old or {}).items()}
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"额外请求头不是合法 JSON：{error}")
+    if not isinstance(raw, dict):
+        raise ValueError('额外请求头必须是 JSON 对象，例如 {"api-key": "xxx"}')
+    if len(raw) > 32:
+        raise ValueError("额外请求头最多 32 项")
+    result: dict[str, str] = {}
+    for name, item in raw.items():
+        name = str(name).strip()
+        item = str(item).strip()
+        if not name or ":" in name:
+            raise ValueError(f"请求头名称不合法：{name}")
+        if len(name) > 100 or len(item) > 2000:
+            raise ValueError(f"请求头 {name} 过长")
+        if any(char in name + item for char in "\r\n"):
+            raise ValueError(f"请求头 {name} 不能包含换行")
+        result[name] = item
+    return result
 
 
 def _key(value: object, previous: object) -> str:

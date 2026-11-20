@@ -741,7 +741,11 @@ export const compressContext = async (sessionId: string): Promise<CompressResult
     return { ok: false, reason: 'short' }
   }
   try {
-    const text = await requestCompression(input.transcript, session.summary?.text ?? '')
+    const text = await requestCompression(
+      input.transcript,
+      session.summary?.text ?? '',
+      sessionId
+    )
     updateSession(sessionId, (current) => ({
       ...current,
       summary: {
@@ -1149,7 +1153,7 @@ const maybeGenerateTitle = async (
     return
   }
   try {
-    const title = await generateTitle({ user, assistant })
+    const title = await generateTitle({ user, assistant, sessionId })
     if (!title) {
       return
     }
@@ -1226,7 +1230,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               ? { context_summary: request.summary }
               : {}),
           },
-          controller.signal
+          controller.signal,
+          sessionId
         )
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {

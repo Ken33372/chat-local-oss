@@ -10,7 +10,7 @@ README 只放"用不用、怎么跑起来"；这份文档放两类细节：可�
 
 | 能力 | 必填 | 可省（有默认） |
 |---|---|---|
-| 对话 | `LLM_BASE_URL`、`LLM_MODEL` | `LLM_API_KEY`（本机服务可空）、`LLM_CONTEXT_LIMIT`、`LLM_MAX_OUTPUT_TOKENS` |
+| 对话 | `LLM_BASE_URL`、`LLM_MODEL` | `LLM_PROVIDER`（默认 `anthropic`；OpenAI 兼容写 `openai`）、`LLM_API_KEY`（本机服务可空）、`LLM_CONTEXT_LIMIT`、`LLM_MAX_OUTPUT_TOKENS` |
 | 搜索 | `SEARCH_PROVIDER`；选 `searxng` 时还要 `SEARCH_BASE_URL` | Tavily / AnySearch 的 Base URL、`SEARCH_RESULTS`（1–12，默认 6） |
 | 重排 | `RERANK_PROVIDER` 与 `RERANK_BASE_URL`，**两个都要** | `RERANK_MODEL`、`RERANK_API_KEY`、`RERANK_TIMEOUT` |
 | 语音输入 | `ASR_PROVIDER` 与 `ASR_BASE_URL` | `ASR_MODEL`（默认 `whisper-1`）、`ASR_API_KEY` |
@@ -31,7 +31,7 @@ LLM_API_KEY=
 
 拿到：对话、思考、历史、上下文管理。搜索、语音、OCR、朗读都不显示入口。
 
-注意模型端必须是 **Anthropic 兼容协议**（`POST /v1/messages`）。llama.cpp 的 OpenAI 接口（`/v1/chat/completions`）不行，需要前面顶一个 Anthropic 兼容网关。
+模型端支持两种协议，用 `LLM_PROVIDER` 选：默认 `anthropic` 走 `POST /v1/messages`（例如 DeepSeek 的 `/anthropic` 端点）；填 `openai` 走 `POST /v1/chat/completions`，Ollama、LM Studio、vLLM、llama.cpp 和各家云服务可以直接接，不需要额外网关。详见下方「对话模型的两条协议」。
 
 ### 示例 2：本地全家桶（模型 + 搜索 + 语音 + 朗读）
 
@@ -87,7 +87,7 @@ TTS_PROVIDER=deepseek
 
 自动生效的部分：
 
-- LLM → `https://api.deepseek.com/anthropic`，模型 `deepseek-flash`；
+- LLM → `https://api.deepseek.com/anthropic`，模型 `deepseek-flash`；写了 `LLM_PROVIDER=openai` 时地址改默认 `https://api.deepseek.com`（官方 OpenAI 兼容端点）；
 - 语音输入 → `deepseek` 的 `/v1/tools/asr`；
 - OCR → `deepseek` 的 `/v1/tools/ocr`（支持 PDF/Word/PPT 和图片）；
 - 朗读 → 只在你写了 `TTS_PROVIDER=deepseek` 后启用（地址和 key 自动复用这把 key）。
@@ -95,6 +95,74 @@ TTS_PROVIDER=deepseek
 **搜索不会因为这把 key 自动打开。** 自建后端的联网搜索要由本地工具循环执行，必须自己配 `SEARCH_PROVIDER`（Tavily / AnySearch / SearXNG）；只有 DeepSeek 云端模式才是服务端搜索。
 
 想覆盖任何一项，直接写对应的环境变量即可（环境变量优先于这把 key 带来的默认值）。
+
+## 对话模型的两条协议
+
+`LLM_PROVIDER` 决定后端向上游发哪种请求。两种协议下，联网搜索、读网页、引用角标、思考过程、附件（图片/OCR）、自动标题、上下文压缩都走同一套逻辑，不需要另配。
+
+| `LLM_PROVIDER` | 上游接口 | 请求处理 | 典型服务 |
+|---|---|---|---|
+| `anthropic`（默认） | `POST {LLM_BASE_URL}/v1/messages` | 原样转发 | DeepSeek 的 `/anthropic` 端点、其他 Anthropic 兼容网关 |
+| `openai` | `POST /v1/chat/completions`（地址规则同 ASR / 重排：根地址或以 `/v1` 结尾自动拼，完整地址原样请求） | 请求改写成 OpenAI 结构，流式回复再翻译回 Anthropic 事件 | OpenAI、DeepSeek、Ollama、LM Studio、vLLM、llama.cpp 及各类网关 |
+
+OpenAI 这一路对齐的细节：
+
+- **思考过程**：认 `reasoning_content`（DeepSeek / vLLM）和 `reasoning` 两种字段，显示为思考块；模型不返回思考就不显示。
+- **工具调用**：`tools` 转成 function calling；模型返回的 `tool_calls` 由本机执行 web_search / read_url，结果按 `role: tool` 回传，搜索卡片和引用编号照常显示。
+- **用量**：`prompt_tokens` / `completion_tokens` 计入上下文提示；`prompt_tokens_details.cached_tokens` 记为缓存命中。
+- **图片**：base64 图片转成 `image_url`（data URL）。上游模型要支持视觉；不支持时把 `CHAT_LOCAL_IMAGE_MODE` 设为 `auto`，会回退 OCR。
+- **兼容兜底**：服务端不认 `stream_options` 时自动去掉重试一次；忽略 `stream` 直接回 JSON 的服务也能用。
+- **自定义请求头**：`LLM_HEADERS` 填 JSON 对象，追加或覆盖请求头（默认 `User-Agent` 是 python-httpx，可在这里改成自己的身份）。两种协议都生效，标题和压缩请求也带上。可用占位符：
+
+  | 占位符 | 值 |
+  |---|---|
+  | `{key}` | `LLM_API_KEY` |
+  | `{session}` | 当前对话 ID，统一成 `ses_...` 形式 |
+  | `{model}` | 模型名 |
+
+  `{session}` 优先用前端随请求传来的会话 ID；直接调接口没传时，按第一条用户消息取哈希，同一对话保持稳定。探测类请求（健康检查、测试连接）没有会话，带 `{session}` 或 `{model}` 的头会自动跳过，不会把占位符原样发出去。
+
+有些服务要求声明 agent 身份并给每个对话发稳定会话 ID（把 `User-Agent` 写成自己的名字，再在一个自定义头里放 `ses_...`）：
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.example.com/v1
+LLM_MODEL=your-model
+LLM_API_KEY=sk-xxx
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
+```
+
+同一对话的所有请求（正文、工具轮次、自动标题、上下文压缩）都会带同一个 `ses_...`。
+
+Ollama：
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_MODEL=qwen3:8b
+LLM_API_KEY=
+```
+
+DeepSeek 的 OpenAI 端点（同一把 key）：
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+LLM_API_KEY=sk-xxx
+```
+
+Azure OpenAI 这类要求 `api-key` 头和 `api-version` 查询参数的服务，用完整接口地址 + 自定义请求头即可接入，不需要额外网关：
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://RESOURCE.openai.azure.com/openai/deployments/DEPLOYMENT/chat/completions?api-version=2024-10-21
+LLM_MODEL=DEPLOYMENT
+LLM_API_KEY=your-azure-key
+LLM_HEADERS={"api-key": "{key}"}
+```
+
+地址已经带完整路径时原样请求，所以查询参数会保留。Azure 没有 `/v1/models`，向导里的「测试连接」可能显示 404/405，但对话不受影响；健康检查把这类响应视为地址可达。
 
 ## 朗读的四种接口形状
 

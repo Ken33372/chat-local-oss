@@ -10,7 +10,7 @@ Everything can go into the project's `.env`, or be written to `data/config.json`
 
 | Capability | Required | Optional (has a default) |
 |---|---|---|
-| Chat | `LLM_BASE_URL`, `LLM_MODEL` | `LLM_API_KEY` (local servers may not need one), `LLM_CONTEXT_LIMIT`, `LLM_MAX_OUTPUT_TOKENS` |
+| Chat | `LLM_BASE_URL`, `LLM_MODEL` | `LLM_PROVIDER` (default `anthropic`; use `openai` for OpenAI-compatible), `LLM_API_KEY` (local servers may not need one), `LLM_CONTEXT_LIMIT`, `LLM_MAX_OUTPUT_TOKENS` |
 | Search | `SEARCH_PROVIDER`; `SEARCH_BASE_URL` when using `searxng` | Base URL for Tavily / AnySearch, `SEARCH_RESULTS` (1–12, default 6) |
 | Rerank | `RERANK_PROVIDER` **and** `RERANK_BASE_URL` — both | `RERANK_MODEL`, `RERANK_API_KEY`, `RERANK_TIMEOUT` |
 | Voice input | `ASR_PROVIDER`, `ASR_BASE_URL` | `ASR_MODEL` (default `whisper-1`), `ASR_API_KEY` |
@@ -31,7 +31,7 @@ LLM_API_KEY=
 
 You get chat, thinking, history and context management. Search, voice, OCR and read-aloud have no UI entry.
 
-The model endpoint must speak the **Anthropic-compatible protocol** (`POST /v1/messages`). llama.cpp's OpenAI endpoint (`/v1/chat/completions`) is not enough; put an Anthropic-compatible gateway in front of it.
+The model endpoint can speak either protocol, selected with `LLM_PROVIDER`: the default `anthropic` posts to `/v1/messages` (for example DeepSeek's `/anthropic` endpoint); `openai` posts to `/v1/chat/completions`, so Ollama, LM Studio, vLLM, llama.cpp and hosted APIs connect directly without an extra gateway. See "The two LLM protocols" below.
 
 ### Example 2: everything local (model + search + voice + read-aloud)
 
@@ -87,7 +87,7 @@ TTS_PROVIDER=deepseek
 
 What happens automatically:
 
-- LLM → `https://api.deepseek.com/anthropic` with model `deepseek-flash`;
+- LLM → `https://api.deepseek.com/anthropic` with model `deepseek-flash` (with `LLM_PROVIDER=openai` the default base becomes `https://api.deepseek.com`, the OpenAI-compatible endpoint);
 - voice input → DeepSeek `/v1/tools/asr`;
 - OCR → DeepSeek `/v1/tools/ocr` (documents and images);
 - read-aloud → only after you set `TTS_PROVIDER=deepseek` (URL and key are reused).
@@ -95,6 +95,74 @@ What happens automatically:
 **Search is not enabled by this key.** In the self-hosted backend, web search runs through the local tool loop, so you must configure `SEARCH_PROVIDER` (Tavily / AnySearch / SearXNG) yourself; only DeepSeek Cloud mode uses server-side search.
 
 Any single value can be overridden by setting its environment variable, which takes precedence over the defaults this key provides.
+
+## The two LLM protocols
+
+`LLM_PROVIDER` decides which request the backend sends upstream. Under both protocols, web search, page reading, citation numbers, thinking, attachments (images / OCR), auto titles and context compression use the same logic — nothing extra to configure.
+
+| `LLM_PROVIDER` | Upstream endpoint | Handling | Typical services |
+|---|---|---|---|
+| `anthropic` (default) | `POST {LLM_BASE_URL}/v1/messages` | forwarded as-is | DeepSeek's `/anthropic` endpoint, other Anthropic-compatible gateways |
+| `openai` | `POST /v1/chat/completions` (same URL rules as ASR / rerank: roots or URLs ending in `/v1` get the standard path, full endpoints are used as-is) | request rewritten into OpenAI shape, streamed reply translated back into Anthropic events | OpenAI, DeepSeek, Ollama, LM Studio, vLLM, llama.cpp and gateways |
+
+What the OpenAI path covers:
+
+- **Thinking**: both `reasoning_content` (DeepSeek / vLLM) and `reasoning` fields are recognized and shown as a thinking block; no field means no block.
+- **Tool calls**: `tools` become function calling; returned `tool_calls` run web_search / read_url locally and are sent back as `role: tool` messages. Search cards and citation numbers keep working.
+- **Usage**: `prompt_tokens` / `completion_tokens` feed the context meter; `prompt_tokens_details.cached_tokens` counts as cache hits.
+- **Images**: base64 images become `image_url` data URLs. The upstream model must support vision; otherwise set `CHAT_LOCAL_IMAGE_MODE=auto` to fall back to OCR.
+- **Fallbacks**: if the server rejects `stream_options` it is retried once without it; servers that ignore `stream` and return plain JSON also work.
+- **Custom headers**: set `LLM_HEADERS` to a JSON object to add or override request headers (the default `User-Agent` is python-httpx, so declare your own identity here). Works under both protocols, including title and compression requests. Placeholders:
+
+  | Placeholder | Value |
+  |---|---|
+  | `{key}` | `LLM_API_KEY` |
+  | `{session}` | Current conversation ID, normalized to `ses_...` |
+  | `{model}` | Model name |
+
+  `{session}` uses the conversation ID the frontend sends; when calling the API directly without one, it is derived from the first user message so it stays stable within a conversation. Probe requests (health check, test connection) have no conversation, so headers containing `{session}` or `{model}` are skipped rather than sending the literal placeholder.
+
+Some providers require an agent identity and a stable per-conversation session ID (declare your own `User-Agent` and put `ses_...` in a custom header):
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.example.com/v1
+LLM_MODEL=your-model
+LLM_API_KEY=sk-xxx
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}
+```
+
+Every request for the same conversation (chat, tool rounds, auto title, compression) carries the same `ses_...`.
+
+Ollama:
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_MODEL=qwen3:8b
+LLM_API_KEY=
+```
+
+DeepSeek's OpenAI endpoint (same key):
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+LLM_API_KEY=sk-xxx
+```
+
+Services that need an `api-key` header and `api-version` query parameter, such as Azure OpenAI, connect with a full endpoint URL plus custom headers — no extra gateway:
+
+```env
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://RESOURCE.openai.azure.com/openai/deployments/DEPLOYMENT/chat/completions?api-version=2024-10-21
+LLM_MODEL=DEPLOYMENT
+LLM_API_KEY=your-azure-key
+LLM_HEADERS={"api-key": "{key}"}
+```
+
+A URL that already contains a full path is used as-is, so the query string survives. Azure has no `/v1/models`; the wizard's "Test connection" may show 404/405, but chat is unaffected, and the health check treats those responses as reachable.
 
 ## The four read-aloud request shapes
 

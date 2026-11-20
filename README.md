@@ -2,7 +2,7 @@
 
 # chat-local
 
-> **定位：深度还原 DeepSeek 网页端的核心聊天体验，同时把会话和附件留在本机；通过 Anthropic 兼容接口，让更多模型也能使用这套聊天体验。**
+> **定位：深度还原 DeepSeek 网页端的核心聊天体验，同时把会话和附件留在本机；通过 Anthropic / OpenAI 兼容接口，让更多模型也能使用这套聊天体验。**
 
 基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 改造。这里的「还原」指对话、思考、联网/深搜、引用、附件和语音等核心聊天链路，不包含 DeepSeek 账号体系、云端会话同步或官网的全部运营功能。
 
@@ -63,7 +63,7 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 ### 第一次打开
 
-还没配置时，首次打开会出现配置向导：**DeepSeek 云端**填 API Key 即可；**自建后端**填 Base URL、API Key、模型名，高级里再配搜索、ASR、OCR、朗读。保存后立即生效。
+还没配置时，首次打开会出现配置向导：**DeepSeek 云端**填 API Key 即可；**自建后端**先选接口协议（Anthropic 兼容 / OpenAI 兼容），再填 Base URL、API Key、模型名，高级里再配搜索、ASR、OCR、朗读。保存后立即生效。
 
 已经用 `.env` 配好的可以直接跳过向导。两种配置来源的优先级、向导入口和全部变量见下方 [配置](#配置)。
 
@@ -71,7 +71,7 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 | | DeepSeek 云端 | 自建后端 |
 |---|---|---|
-| LLM | DeepSeek 官方 API | 任意 Anthropic 兼容模型（完全自定义） |
+| LLM | DeepSeek 官方 API | 任意 Anthropic 或 OpenAI 兼容模型（完全自定义） |
 | 需要 | 一个 DeepSeek API Key | Base URL + API Key + 模型名 |
 | 历史 | 本机 SQLite | 本机 SQLite |
 
@@ -91,7 +91,9 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 | 变量 | 说明 |
 |---|---|
 | `DEEPSEEK_API_KEY` | 填了就自动把 LLM、ASR、OCR 指向 DeepSeek；朗读选 `deepseek` 时也复用这把 key（但要自己把 `TTS_PROVIDER` 打开）。**只对 `.env` 或系统环境变量生效**，首次运行向导里没有这一项 |
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的 Anthropic 兼容接口 |
+| `LLM_PROVIDER` | `anthropic`（默认，`POST /v1/messages`）/ `openai`（`POST /v1/chat/completions`，可接 Ollama、LM Studio、vLLM 等）。两种协议下搜索、引用、思考、附件、标题、压缩行为一致，细节见 [docs/providers.zh-CN.md](docs/providers.zh-CN.md#对话模型的两条协议) |
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 自建后端的模型接口；Anthropic 兼容填到 `/anthropic` 这类端点，OpenAI 兼容填根地址、`/v1` 结尾或完整接口地址 |
+| `LLM_HEADERS` | 额外请求头，JSON 对象。占位符：`{key}` 引用 `LLM_API_KEY`，`{session}` 是当前对话 ID（形如 `ses_...`），`{model}` 是模型名。用于 Azure 自定义鉴权、身份声明和会话 ID（例如 `{"User-Agent": "chat-local-oss/0.1.2", "x-session-id": "{session}"}`）；自定义头会覆盖同名默认头 |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | 输入上限与单次最大输出，默认 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
 | `ASR_BASE_URL` / `ASR_API_KEY` / `ASR_MODEL` | 语音识别；OpenAI 兼容接口默认模型 `whisper-1`。根地址或以 `/v1` 结尾的地址（含 `/api/v1` 前缀）自动接 `/v1/audio/transcriptions`，填完整地址原样请求；响应认 `{text}`、`[{text}]`、`{segments:[{text}]}` 和纯文本 |
@@ -123,11 +125,11 @@ Windows x64 可以直接下载 [Releases](https://github.com/Ken33372/chat-local
 
 LLM、搜索、ASR、OCR 分别配置，互不绑定：
 
-- **LLM**：模型名、Base URL、API Key、上下文上限和单次最大输出都由你填写；使用 Anthropic 兼容协议（例如 DeepSeek 的 `/anthropic` 端点）。
+- **LLM**：模型名、Base URL、API Key、上下文上限和单次最大输出都由你填写；协议可选 Anthropic 兼容（例如 DeepSeek 的 `/anthropic` 端点）或 OpenAI 兼容（Ollama、LM Studio、vLLM、各家云服务）。
 - **ASR**：可选 DeepSeek `/v1/tools/asr` 或 OpenAI 兼容 `/v1/audio/transcriptions`。
 - **OCR**：可选 DeepSeek `/v1/tools/ocr`（文档与图片）或 OpenAI 兼容视觉接口（仅图片）。
 - **搜索**：可选 Tavily、AnySearch、SearXNG，或直接关闭。SearXNG 可以再挂自己的重排模型，开启多页聚合与相关性排序；不配就只取一页。
-- 未配置的能力会自动隐藏；OpenAI 兼容的 LLM 尚未接入。
+- 未配置的能力会自动隐藏。
 
 ### 会话与数据
 
@@ -153,7 +155,7 @@ LLM、搜索、ASR、OCR 分别配置，互不绑定：
 
 | 能力 | DeepSeek 云端 | 自建后端 |
 |---|---|---|
-| 对话/思考/停止/续写 | DeepSeek API | Anthropic 兼容接口 |
+| 对话/思考/停止/续写 | DeepSeek API | Anthropic 或 OpenAI 兼容接口 |
 | 联网搜索、读网页 | DeepSeek 服务端工具，工具本身不计费 | 你配置的搜索 provider |
 | 语音输入 | DeepSeek `/v1/tools/asr` | `deepseek` 或 OpenAI 兼容 ASR |
 | 朗读 | DeepSeek `/v1/tools/tts` | `deepseek` 或 OpenAI 兼容 `/v1/audio/speech` |
@@ -165,7 +167,6 @@ LLM、搜索、ASR、OCR 分别配置，互不绑定：
 ## 限制
 
 - 本项目未经过广泛测试，详见上面的「项目状态」。
-- 自建后端的 LLM 目前只支持 Anthropic 兼容协议（DeepSeek 的 `/anthropic` 端点、其他兼容服务）。OpenAI 兼容的 LLM 尚未接入。
 - OpenAI 兼容 OCR 只处理图片；PDF/Word/PPT 请用 DeepSeek OCR 或先转图片。
 - 导入/导出目前只支持 DeepSeek 导出格式。
 - 朗读（云端与自建）都未做真机试听验证，属于「未经过广泛测试」的范围；自建朗读能不能出声，取决于你接的服务是否实现了 `/v1/audio/speech`。

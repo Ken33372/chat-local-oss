@@ -126,12 +126,17 @@ export const buildCompressionInput = (
 
 export const requestCompression = async (
   transcript: string,
-  previousSummary: string
+  previousSummary: string,
+  sessionId?: string
 ): Promise<string> => {
   const response = await fetch('/api/ai/compress', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Chat-Local': '1' },
-    body: JSON.stringify({ transcript, previous_summary: previousSummary }),
+    body: JSON.stringify({
+      transcript,
+      previous_summary: previousSummary,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    }),
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')

@@ -1,7 +1,7 @@
 """运行配置：环境变量 / .env 优先，其次是首次运行向导写入的 data/config.json。
 
 本地/自建后端按能力分别配置：
-- LLM：任意 Anthropic 兼容接口（DeepSeek、其他兼容服务）
+- LLM：Anthropic 兼容（DeepSeek 的 /anthropic 端点等）或 OpenAI 兼容（Ollama、vLLM、各家云服务）
 - ASR / OCR：DeepSeek 工具接口或 OpenAI 兼容接口，未配置即关闭
 - 搜索：Tavily / AnySearch / SearXNG，未配置即关闭
 
@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -83,6 +84,27 @@ def _domains(name: str, file_value: object) -> list[str]:
     return [str(item).strip().lower() for item in raw if str(item).strip()]
 
 
+def _headers(name: str, file_value: object) -> dict[str, str]:
+    """额外请求头：环境变量是 JSON 串，config.json 里是对象；只留干净的键值对。"""
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        raw = file_value
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except ValueError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key, value in list(raw.items())[:32]:
+        key = str(key).replace("\r", "").replace("\n", "").strip()
+        value = str(value).replace("\r", "").replace("\n", "").strip()
+        if key and value and ":" not in key:
+            result[key] = value
+    return result
+
+
 def _default_base(provider: str, key: str) -> str:
     if provider == "deepseek" or (key and provider == "none"):
         return "https://api.deepseek.com"
@@ -98,15 +120,23 @@ def _compute() -> dict:
     asr = _block("asr")
     ocr = _block("ocr")
 
-    llm_base = _pick(
-        "LLM_BASE_URL",
-        llm.get("base_url"),
-        "https://api.deepseek.com/anthropic" if deepseek_key else "",
-    ).rstrip("/")
+    llm_provider = _pick("LLM_PROVIDER", llm.get("provider"), "anthropic").lower()
+    if llm_provider in ("openai-compatible", "openai_compatible", "openai兼容"):
+        llm_provider = "openai"
+    if llm_provider not in ("anthropic", "openai"):
+        llm_provider = "anthropic"
+    if deepseek_key:
+        llm_default_base = (
+            "https://api.deepseek.com" if llm_provider == "openai" else "https://api.deepseek.com/anthropic"
+        )
+    else:
+        llm_default_base = ""
+    llm_base = _pick("LLM_BASE_URL", llm.get("base_url"), llm_default_base).rstrip("/")
     llm_key = _pick("LLM_API_KEY", llm.get("api_key"), deepseek_key)
     llm_model = _pick(
         "LLM_MODEL", llm.get("model"), "deepseek-flash" if deepseek_key else ""
     )
+    llm_headers = _headers("LLM_HEADERS", llm.get("headers"))
     try:
         context_limit = int(_pick("LLM_CONTEXT_LIMIT", llm.get("context_limit"), "131072"))
     except ValueError:
@@ -177,9 +207,11 @@ def _compute() -> dict:
 
     return {
         "DEEPSEEK_API_KEY": deepseek_key,
+        "LLM_PROVIDER": llm_provider,
         "LLM_BASE_URL": llm_base,
         "LLM_API_KEY": llm_key,
         "LLM_MODEL": llm_model,
+        "LLM_HEADERS": llm_headers,
         "LLM_CONTEXT_LIMIT": context_limit,
         "LLM_MAX_OUTPUT_TOKENS": max_output,
         "ASR_PROVIDER": asr_provider,
