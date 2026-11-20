@@ -146,11 +146,11 @@ LLM, search, ASR, and OCR are configured independently:
 - **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
 - **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
-- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; pinned and recently updated entries are injected into the system prompt, the model can search them and propose new ones, and a proposal only takes effect after you confirm it. Export to txt and import txt/JSON (duplicates are skipped). Persona cards, custom system prompts and automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
+- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank), the model can search them and propose new ones, and a proposal only takes effect after you confirm it. Export to txt and import txt/JSON (duplicates are skipped). Persona cards, custom system prompts and automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
 
 ### UI and configuration
 
-- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Choosing SearXNG as the search provider reveals a rerank group (Base URL / API Key / Model); filling in the Base URL is what turns on multi-page aggregation. Under Advanced you can also configure read-aloud: provider, base URL, key, model, voice and response format.
+- **First-run wizard:** available in both modes, but it only writes self-hosted backend configuration. Advanced always shows two groups: rerank (base URL / API key / model, shared by search and advanced memory retrieval) and embedding (URL / key / model / dimensions, used only by advanced memory retrieval). Read-aloud is configured there as well.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
 

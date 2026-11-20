@@ -19,6 +19,8 @@ Everything can go into the project's `.env`, or be written to `data/config.json`
 
 Setting only `RERANK_BASE_URL` does **not** turn reranking on: `RERANK_PROVIDER` defaults to `none`, so both are required.
 
+The embedding endpoint is used only by advanced memory retrieval, and **the dimension must be filled in and match the model**; a mismatch is reported and retrieval falls back to local scoring.
+
 ### Example 1: model only (smallest working setup)
 
 ```env
@@ -52,6 +54,12 @@ SEARCH_BASE_URL=http://127.0.0.1:8080
 RERANK_PROVIDER=openai
 RERANK_BASE_URL=http://127.0.0.1:8081
 RERANK_MODEL=bge-reranker-v2-m3
+
+# ---- embeddings: optional, used only by advanced memory retrieval ----
+EMBEDDING_PROVIDER=openai
+EMBEDDING_BASE_URL=http://127.0.0.1:8080
+EMBEDDING_MODEL=Qwen3-Embedding-0.6B-Q8_0
+EMBEDDING_DIM=1024
 
 # ---- voice input: OpenAI-compatible ASR such as whisper.cpp ----
 ASR_PROVIDER=openai
@@ -187,7 +195,7 @@ Self-hosted read-aloud follows the provider you configure: `deepseek` calls the 
 
 Without `TTS_PROVIDER` the read-aloud button is hidden. Cloud read-aloud is unchanged. Neither path has been verified by listening to real output, so both fall under "not broadly tested."
 
-## ASR / OCR / rerank
+## ASR / OCR / rerank / embeddings
 
 Audio and OCR servers likewise have no shared protocol, so the project aligns on the smallest common contract:
 
@@ -196,6 +204,7 @@ Audio and OCR servers likewise have no shared protocol, so the project aligns on
 | ASR | Standard multipart (`file` + `model`), accepted by whisper.cpp and most forks | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / plain text; long base64 blobs are skipped | A root URL or any URL ending in `/v1` gets `/v1/audio/transcriptions`; a full URL is used as-is |
 | OCR | DeepSeek uses `/v1/tools/ocr` (documents and images); OpenAI-compatible uses vision chat/completions (images only) | The reply text, either way | Same rule: root URL gets the standard path appended |
 | Rerank | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` or a top-level `[{index,score}]` array (TEI style); a wrapping `data` object is also accepted | A root URL or any URL ending in `/v1` gets `/v1/rerank`; TEI's `/rerank` is used as-is |
+| Embedding | `{model, input:[...]}` | `{data:[{index, embedding:[...]}]}` (OpenAI shape) | A root URL or any URL ending in `/v1` gets `/v1/embeddings`; full endpoints are used as-is |
 
 Dedicated OCR servers (PaddleOCR, MinerU, Surya) have no common protocol and are not integrated; use an OpenAI-compatible vision endpoint or DeepSeek OCR instead.
 

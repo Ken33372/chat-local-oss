@@ -1,5 +1,7 @@
 # SearXNG and reranking
 
+> The same `RERANK_*` settings are reused by advanced memory retrieval (when configured, vector candidates get a second ranking pass); see [context.md](context.md) for the memory side and its fallbacks.
+
 ## SearXNG result quality and the rerank switch
 
 SearXNG only aggregates titles and snippets from other engines — it does no relevance ranking of its own, and a ranked answer depends on which engine returned a page first. So the behaviour splits in two:

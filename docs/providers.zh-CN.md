@@ -13,11 +13,14 @@ README 只放"用不用、怎么跑起来"；这份文档放两类细节：可�
 | 对话 | `LLM_BASE_URL`、`LLM_MODEL` | `LLM_PROVIDER`（默认 `anthropic`；OpenAI 兼容写 `openai`）、`LLM_API_KEY`（本机服务可空）、`LLM_CONTEXT_LIMIT`、`LLM_MAX_OUTPUT_TOKENS` |
 | 搜索 | `SEARCH_PROVIDER`；选 `searxng` 时还要 `SEARCH_BASE_URL` | Tavily / AnySearch 的 Base URL、`SEARCH_RESULTS`（1–12，默认 6） |
 | 重排 | `RERANK_PROVIDER` 与 `RERANK_BASE_URL`，**两个都要** | `RERANK_MODEL`、`RERANK_API_KEY`、`RERANK_TIMEOUT` |
+| 向量 | `EMBEDDING_PROVIDER`、`EMBEDDING_BASE_URL`、`EMBEDDING_MODEL`、`EMBEDDING_DIM` | `EMBEDDING_API_KEY` |
 | 语音输入 | `ASR_PROVIDER` 与 `ASR_BASE_URL` | `ASR_MODEL`（默认 `whisper-1`）、`ASR_API_KEY` |
 | OCR | `OCR_PROVIDER` 与 `OCR_BASE_URL` | `OCR_MODEL`（默认 `gpt-4o-mini`）、`OCR_API_KEY` |
 | 朗读 | `TTS_PROVIDER` 与 `TTS_BASE_URL`；`engine` 这一档还必须填 `TTS_VOICE` | `TTS_MODEL`（默认 `tts-1`）、`TTS_RESPONSE_FORMAT`、`TTS_MAX_CHARS` |
 
 只填 `RERANK_BASE_URL` 不会开启重排：`RERANK_PROVIDER` 默认是 `none`，两项缺一不可。
+
+向量接口只给记忆的「高级检索」用，**维度必须手填且与模型一致**（写错不会自动纠正，使用时会报维度不一致并回退本地打分）。
 
 ### 示例 1：只有模型（最小可用）
 
@@ -52,6 +55,12 @@ SEARCH_BASE_URL=http://127.0.0.1:8080
 RERANK_PROVIDER=openai
 RERANK_BASE_URL=http://127.0.0.1:8081
 RERANK_MODEL=bge-reranker-v2-m3
+
+# ---- 向量：可选，只给记忆高级检索用 ----
+EMBEDDING_PROVIDER=openai
+EMBEDDING_BASE_URL=http://127.0.0.1:8080
+EMBEDDING_MODEL=Qwen3-Embedding-0.6B-Q8_0
+EMBEDDING_DIM=1024
 
 # ---- 语音输入：whisper.cpp 这类 OpenAI 兼容 ASR ----
 ASR_PROVIDER=openai
@@ -187,7 +196,7 @@ LLM_HEADERS={"api-key": "{key}"}
 
 没配 `TTS_PROVIDER` 时不显示朗读按钮，云端模式的朗读入口不受影响。
 
-## 其他能力：ASR / OCR / 重排
+## 其他能力：ASR / OCR / 重排 / 向量
 
 音频推理服务和 OCR 服务同样没有统一协议，本项目按"能对齐的最小约定"处理：
 
@@ -196,6 +205,7 @@ LLM_HEADERS={"api-key": "{key}"}
 | ASR | 标准 multipart（`file` + `model`），whisper.cpp 与多数 fork 都认 | `{text}` / `{transcript}` / `{results\|segments:[{text}]}` / `[{text}]` / 纯文本；长 base64 串会被跳过 | 根地址或以 `/v1` 结尾的地址自动接 `/v1/audio/transcriptions`，完整地址原样请求 |
 | OCR | DeepSeek 用 `/v1/tools/ocr`（文档与图片）；OpenAI 兼容走视觉 chat/completions（仅图片） | 两种都是取正文文本 | 同上，根地址或以 `/v1` 结尾的地址接标准路径 |
 | 重排 | `{model, query, documents}` | `{"results":[{index,relevance_score}]}` 或顶层数组 `[{index,score}]`（TEI 的形状），网关套一层 `data` 也认 | 根地址或以 `/v1` 结尾的地址自动接 `/v1/rerank`，填 TEI 的 `/rerank` 原样请求 |
+| 向量 | `{model, input:[...]}` | `{data:[{index, embedding:[...]}]}`（OpenAI 形状） | 根地址或以 `/v1` 结尾的地址自动接 `/v1/embeddings`，完整地址原样请求 |
 
 PaddleOCR、MinerU、Surya 这类"正经 OCR 服务"没有统一协议，本项目目前不接；用 OpenAI 兼容视觉接口或 DeepSeek OCR 代替。
 
