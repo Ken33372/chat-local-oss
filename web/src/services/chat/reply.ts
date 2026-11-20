@@ -131,6 +131,14 @@ export const applyEvent = (
         stopDetails: event.delta.stop_details,
         usage: event.usage ?? next.usage,
       }
+    case 'memory_notice':
+      return {
+        ...next,
+        memoryNotices: [
+          ...(next.memoryNotices ?? []),
+          { action: event.action, count: event.count, ok: event.ok },
+        ],
+      }
     default:
       return next
   }

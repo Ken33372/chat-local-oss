@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 import ai
 import config
+import memory
 import setup_store
 import storage
 from providers import asr as asr_provider
@@ -22,6 +23,7 @@ from providers import tts as tts_provider
 
 app = FastAPI(title="chat-local", version="0.1.2")
 storage.init()
+memory.init()
 
 
 def guard(request: Request) -> None:
@@ -270,6 +272,16 @@ def _masked_status() -> dict:
             "template_audio": config.TTS_TEMPLATE_AUDIO,
         },
         "capabilities": caps,
+        "memory": {
+            "enabled": config.MEMORY_ENABLED,
+            "inject": config.MEMORY_INJECT,
+            "inject_count": config.MEMORY_INJECT_COUNT,
+            "tools": config.MEMORY_TOOLS,
+            "write": config.MEMORY_WRITE,
+            "count": len(memory.list_items()),
+            "pending": len(memory.pending_proposals()),
+            "limits": {"text": memory.MAX_TEXT, "items": memory.MAX_ITEMS},
+        },
     }
 
 
@@ -327,6 +339,119 @@ def setup_clear(request: Request) -> dict:
     setup_store.clear(config.DATA_DIR)
     config.reload()
     return _masked_status()
+
+
+# ---------------- 长期记忆 ----------------
+
+@app.get("/api/memory/items")
+def memory_items() -> dict:
+    return {"items": memory.list_items()}
+
+
+@app.post("/api/memory/items")
+async def memory_add(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    try:
+        item = memory.add_item(body.get("text"), bool(body.get("pinned")))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return item
+
+
+@app.patch("/api/memory/items/{item_id}")
+async def memory_update(item_id: int, request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    try:
+        item = memory.update_item(
+            item_id,
+            body.get("text") if "text" in body else None,
+            bool(body.get("pinned")) if "pinned" in body else None,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return item
+
+
+@app.delete("/api/memory/items/{item_id}")
+def memory_delete(item_id: int, request: Request) -> dict:
+    guard(request)
+    memory.delete_item(item_id)
+    return {"ok": True}
+
+
+@app.get("/api/memory/proposals")
+def memory_proposals() -> dict:
+    return {"proposals": memory.pending_proposals()}
+
+
+@app.post("/api/memory/proposals/{proposal_id}/accept")
+def memory_accept(proposal_id: int, request: Request) -> dict:
+    guard(request)
+    try:
+        return {"ok": True, "item": memory.accept_proposal(proposal_id)}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/memory/proposals/{proposal_id}/reject")
+def memory_reject(proposal_id: int, request: Request) -> dict:
+    guard(request)
+    try:
+        memory.reject_proposal(proposal_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return {"ok": True}
+
+
+@app.get("/api/memory/export")
+def memory_export() -> dict:
+    return {"text": memory.export_text(), "items": memory.list_items()}
+
+
+@app.post("/api/memory/import")
+async def memory_import(request: Request) -> dict:
+    guard(request)
+    body = await request.json()
+    raw = body.get("text") if isinstance(body, dict) else None
+    if not isinstance(raw, str) or not raw.strip():
+        raise HTTPException(status_code=400, detail="请提供要导入的文本")
+    if len(raw) > 1024 * 1024:
+        raise HTTPException(status_code=400, detail="导入文件不能超过 1 MB")
+    try:
+        return memory.import_text(raw)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.post("/api/memory/clear")
+def memory_clear(request: Request) -> dict:
+    guard(request)
+    memory.clear_all()
+    return {"ok": True}
+
+
+@app.patch("/api/memory/settings")
+async def memory_settings(request: Request) -> dict:
+    guard(request)
+    if not _setup_writable(request):
+        raise HTTPException(status_code=403, detail="服务不是仅本机监听，请改用 .env 配置")
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    current = setup_store.load(config.DATA_DIR)
+    current["memory"] = body
+    try:
+        setup_store.save(config.DATA_DIR, current)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    config.reload()
+    return _masked_status()["memory"]
 
 
 # ---------------- 本地模型与工具 ----------------

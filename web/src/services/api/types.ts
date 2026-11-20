@@ -234,6 +234,13 @@ export type MessageStreamEvent =
     }
   | { type: 'message_stop' }
   | { type: 'ping' }
+  /** 本机后端的记忆提示：只用于在思考链里显示，不进入内容块，也不回传上游 */
+  | {
+      type: 'memory_notice'
+      action: 'inject' | 'search' | 'remember'
+      count: number
+      ok?: boolean
+    }
 
 /**
  * POST /anthropic/v1/files 的 purpose：PDF 与 Word、PPT 需要服务端做版面解析；

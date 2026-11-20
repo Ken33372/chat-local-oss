@@ -97,7 +97,33 @@ def normalize(body: dict, previous: dict | None = None) -> dict:
                 raise ValueError("朗读返回格式只能是 wav / mp3 / opus / pcm")
             item["response_format"] = audio_format
         result[name] = item
+    # 记忆只影响本地/自建后端；向导不传这个分块时沿用旧值，避免一次保存把开关清掉
+    memory = body.get("memory") if isinstance(body.get("memory"), dict) else {}
+    old_memory = previous.get("memory") if isinstance(previous.get("memory"), dict) else {}
+    inject = _text(memory.get("inject"), 16).lower() or _text(old_memory.get("inject"), 16).lower() or "recent"
+    if inject not in ("recent", "off"):
+        raise ValueError("记忆注入方式只能是 recent（置顶+最近）或 off")
+    write = _text(memory.get("write"), 16).lower() or _text(old_memory.get("write"), 16).lower() or "propose"
+    if write not in ("propose", "off"):
+        raise ValueError("记忆写入方式只能是 propose（提议待确认）或 off")
+    count = _int(memory.get("inject_count"), old_memory.get("inject_count"), 5)
+    result["memory"] = {
+        "enabled": _bool(memory.get("enabled"), old_memory.get("enabled"), False),
+        "inject": inject,
+        "inject_count": max(1, min(10, count)),
+        "tools": _bool(memory.get("tools"), old_memory.get("tools"), True),
+        "write": write,
+    }
     return result
+
+
+def _bool(value: object, previous: object, default: bool) -> bool:
+    candidate = value if value is not None else previous
+    if isinstance(candidate, bool):
+        return candidate
+    if candidate is None or not str(candidate).strip():
+        return default
+    return str(candidate).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _int(value: object, previous: object, default: int) -> int:

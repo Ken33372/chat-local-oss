@@ -7,6 +7,7 @@ import {
   IconFollowsystemOutline16,
   IconLightOutline16,
   IconSettingsOutline16,
+  IconThinkOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
 import {
@@ -54,6 +55,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { MemorySettingsPanel } from './MemorySettingsPanel.js'
 import styles from './Settings.module.css'
 
 /**
@@ -71,6 +73,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     label: 'settingDialogAsideGeneralOptionLabel',
     icon: <IconSettingsOutline16 />,
   },
+  { value: 'memory', label: 'settingDialogAsideMemoryOptionLabel', icon: <IconThinkOutline16 /> },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
 ]
 
@@ -145,6 +148,8 @@ const SettingsContent = () => {
               {mode === 'cloud' ? <TtsVoiceSetting /> : null}
               <LocationSetting />
             </>
+          ) : section === 'memory' ? (
+            <MemorySettingsPanel />
           ) : (
             <>
               {mode === 'cloud' ? <ApiKeyField editor={apiKeyEditor} /> : null}

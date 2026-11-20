@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { MemorySettings } from './memory.js'
 
 export type SetupStatus = {
   configured: boolean
@@ -24,7 +25,19 @@ export type SetupStatus = {
     voice: string
     response_format: string
   }
-  capabilities: { llm: boolean; search: boolean; asr: boolean; ocr: boolean; tts: boolean }
+  capabilities: {
+    llm: boolean
+    search: boolean
+    asr: boolean
+    ocr: boolean
+    tts: boolean
+    memory: boolean
+  }
+  memory: MemorySettings & {
+    count: number
+    pending: number
+    limits: { text: number; items: number }
+  }
 }
 
 export type SetupBody = {

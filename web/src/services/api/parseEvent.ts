@@ -224,6 +224,19 @@ export const readMessageEvent = (value: unknown): MessageStreamEvent | null => {
       } as MessageStreamEvent
     case 'message_stop':
       break
+    case 'memory_notice':
+      if (
+        !['inject', 'search', 'remember'].includes(value.action as string) ||
+        !isIndex(value.count)
+      ) {
+        return null
+      }
+      return {
+        type: 'memory_notice',
+        action: value.action,
+        count: value.count as number,
+        ok: value.ok === true,
+      } as MessageStreamEvent
     default:
       return null
   }

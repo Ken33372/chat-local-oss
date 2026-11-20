@@ -337,6 +337,33 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
     }
   })
 
+  // 记忆提示：注入次数放在最前，工具结果按发生顺序追加；只用于展示，不进入正文
+  let injected = 0
+  for (const notice of reply.memoryNotices ?? []) {
+    if (notice.action === 'inject') {
+      injected += notice.count
+      continue
+    }
+    steps.push({
+      type: 'text',
+      key: `memory-${notice.action}-${steps.length}`,
+      markdown:
+        notice.action === 'search'
+          ? translate(
+              notice.count > 0 ? 'memoryStepSearch' : 'memoryStepSearchEmpty',
+              { count: notice.count }
+            )
+          : translate(notice.ok ? 'memoryStepRememberQueued' : 'memoryStepRememberBlocked'),
+    })
+  }
+  if (injected > 0) {
+    steps.unshift({
+      type: 'text',
+      key: 'memory-inject',
+      markdown: translate('memoryStepInject', { count: injected }),
+    })
+  }
+
   const answer = pendingText.length > 0 ? joinTextBlocks(pendingText, registry) : null
   return {
     steps,

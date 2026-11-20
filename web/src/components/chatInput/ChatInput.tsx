@@ -24,7 +24,8 @@ import {
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
-import { ensureApiKey } from '../settings/settingsDialogState.js'
+import { ensureApiKey, openSettings } from '../settings/settingsDialogState.js'
+import { useMemoryStore } from '../../services/memory.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, useUploads } from '../../services/attachments.js'
@@ -136,6 +137,24 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 移动端录音时用频谱替代输入框内容
   const recording = voice.status === 'recording'
 
+  // 记忆只在本地模式存在；回复结束、窗口回焦时刷新待确认数量
+  const pendingMemory = useMemoryStore((state) => state.pending)
+  const refreshMemory = useMemoryStore((state) => state.refresh)
+  useEffect(() => {
+    if (!local) {
+      return
+    }
+    void refreshMemory()
+    const onFocus = () => void refreshMemory()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [local, refreshMemory])
+  useEffect(() => {
+    if (local && !streaming) {
+      void refreshMemory()
+    }
+  }, [local, streaming, refreshMemory])
+
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
 
@@ -168,6 +187,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         }
       }}
     >
+      {local && pendingMemory > 0 ? (
+        <button
+          type="button"
+          className={styles.memoryHint}
+          onClick={() => openSettings('memory')}
+        >
+          {t('memoryConfirmBanner', { count: pendingMemory })}
+        </button>
+      ) : null}
       <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
       <div className={styles.textareaWrapper}>
         <textarea

@@ -84,6 +84,18 @@ def _domains(name: str, file_value: object) -> list[str]:
     return [str(item).strip().lower() for item in raw if str(item).strip()]
 
 
+def _flag(name: str, value: object, default: bool) -> bool:
+    """布尔开关：环境变量优先，其次 config.json，最后默认值。"""
+    env = os.getenv(name)
+    if env is not None and env.strip():
+        return env.strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(value, bool):
+        return value
+    if value is None or not str(value).strip():
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def _headers(name: str, file_value: object) -> dict[str, str]:
     """额外请求头：环境变量是 JSON 串，config.json 里是对象；只留干净的键值对。"""
     raw = os.getenv(name)
@@ -197,6 +209,22 @@ def _compute() -> dict:
         search_results = 6
 
     # 重排：只有配了接口，SearXNG 这一路才翻页聚合候选（见 providers/rerank.py）
+    # 长期记忆：界面上配，只影响本地/自建后端；没有任何自动写入
+    mem = _block("memory")
+    memory_enabled = _flag("CHAT_LOCAL_MEMORY", mem.get("enabled"), False)
+    memory_inject = _pick("CHAT_LOCAL_MEMORY_INJECT", mem.get("inject"), "recent").lower()
+    if memory_inject not in ("recent", "off"):
+        memory_inject = "recent"
+    try:
+        memory_inject_count = int(_pick("CHAT_LOCAL_MEMORY_COUNT", mem.get("inject_count"), "5"))
+    except ValueError:
+        memory_inject_count = 5
+    memory_inject_count = max(1, min(10, memory_inject_count))
+    memory_tools = _flag("CHAT_LOCAL_MEMORY_TOOLS", mem.get("tools"), True)
+    memory_write = _pick("CHAT_LOCAL_MEMORY_WRITE", mem.get("write"), "propose").lower()
+    if memory_write not in ("propose", "off"):
+        memory_write = "propose"
+
     rerank = _block("rerank")
     rerank_provider = _pick("RERANK_PROVIDER", rerank.get("provider"), "none").lower()
     rerank_base = _pick("RERANK_BASE_URL", rerank.get("base_url"), "").rstrip("/")
@@ -256,6 +284,11 @@ def _compute() -> dict:
         "RERANK_API_KEY": rerank_key,
         "RERANK_MODEL": rerank_model,
         "RERANK_TIMEOUT": rerank_timeout,
+        "MEMORY_ENABLED": memory_enabled,
+        "MEMORY_INJECT": memory_inject,
+        "MEMORY_INJECT_COUNT": memory_inject_count,
+        "MEMORY_TOOLS": memory_tools,
+        "MEMORY_WRITE": memory_write,
     }
 
 
@@ -283,4 +316,5 @@ def capabilities() -> dict:
         "ocr": OCR_PROVIDER in ("deepseek", "openai") and bool(OCR_BASE_URL),
         "tts": (TTS_PROVIDER in ("deepseek", "openai", "engine") and bool(TTS_BASE_URL))
         or (TTS_PROVIDER == "template" and bool(TTS_TEMPLATE_URL or TTS_BASE_URL)),
+        "memory": bool(MEMORY_ENABLED),
     }

@@ -145,6 +145,7 @@ LLM, search, ASR, and OCR are configured independently:
 - **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
 - **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
+- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; pinned and recently updated entries are injected into the system prompt, the model can search them and propose new ones, and a proposal only takes effect after you confirm it. Export to txt and import txt/JSON (duplicates are skipped). Persona cards, custom system prompts and automatic conversation summaries are not implemented yet.
 
 ### UI and configuration
 
