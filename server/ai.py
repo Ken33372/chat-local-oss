@@ -901,9 +901,15 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     except (TypeError, ValueError):
         max_rounds = config.MAX_TOOL_ROUNDS
     max_rounds = max(1, min(20, max_rounds))
+    # 与云端一致：读链接始终可用；搜索开关只控制搜索与页内查找。
     tools = (
-        [tool for tool in TOOLS if deep or tool["name"] != "find_in_page"]
-        if search_enabled
+        [
+            tool
+            for tool in TOOLS
+            if tool["name"] == "read_url"
+            or (search_enabled and (deep or tool["name"] != "find_in_page"))
+        ]
+        if config.capabilities()["search"]
         else []
     )
     if config.MEMORY_ENABLED and config.MEMORY_TOOLS:
@@ -1101,10 +1107,6 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                 if stop_reason == "tool_use" and calls:
                     if round_index >= max_rounds:
                         break
-                    if any(call["name"] not in allowed_tools for call in calls):
-                        raise UpstreamError("模型请求了本轮未启用的工具，已停止执行。")
-                    if any(not isinstance(call["input"], dict) for call in calls):
-                        raise UpstreamError("模型工具参数必须是 JSON 对象。")
                     assistant_blocks: list[dict] = []
                     text = "".join(round_text).strip()
                     if text:
@@ -1122,9 +1124,24 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                     results: list[dict] = []
                     round_has_web = any(
                         call["name"] in ("web_search", "read_url", "find_in_page")
+                        and call["name"] in allowed_tools
                         for call in calls
                     )
                     for call in calls:
+                        if call["name"] not in allowed_tools:
+                            results.append({
+                                "type": "tool_result",
+                                "tool_use_id": call["id"],
+                                "content": f"工具 {call['name']} 本轮未启用，未执行。请直接回答。",
+                            })
+                            continue
+                        if not isinstance(call["input"], dict):
+                            results.append({
+                                "type": "tool_result",
+                                "tool_use_id": call["id"],
+                                "content": "工具参数格式无效，未执行。请直接回答或重新调用。",
+                            })
+                            continue
                         if call["name"] in memory.TOOL_NAMES:
                             text_for_model, notice = await asyncio.to_thread(
                                 _execute_memory_tool,

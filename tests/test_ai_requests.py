@@ -124,17 +124,29 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("工具调用次数已达上限" in event for event in events))
         self.assertEqual(self.ledger.record.call_args.args[0]["usage"], usage(30, 7))
 
-    async def test_disabled_search_cannot_execute_returned_tool(self):
-        self.upstream([response(10, 3, "read_url")])
+    async def test_search_toggle_keeps_read_url_available(self):
+        self.upstream([response(10, 3, "read_url"), response(20, 4)])
+        events = await self.consume(search=False)
+        self.ai._execute_tool.assert_awaited_once()
+        self.assertFalse(any("event: error" in event for event in events))
+        self.assertEqual(self.ledger.record.call_args.args[0]["usage"], usage(30, 7))
+
+    async def test_disabled_search_tool_is_skipped_without_failing(self):
+        self.upstream([response(10, 3, "web_search"), response(20, 4)])
         events = await self.consume(search=False)
         self.ai._execute_tool.assert_not_awaited()
-        self.assertTrue(any("未启用的工具" in event for event in events))
+        self.assertFalse(any("event: error" in event for event in events))
+        result = self.payloads[1]["messages"][-1]["content"][0]["content"]
+        self.assertIn("未启用", result)
+        self.assertEqual(self.ledger.record.call_args.args[0]["usage"], usage(30, 7))
 
-    async def test_disabled_memory_tool_is_not_executed(self):
-        self.upstream([response(10, 3, "remember")])
-        await self.consume()
+    async def test_disabled_memory_tool_is_skipped_without_failing(self):
+        self.upstream([response(10, 3, "remember"), response(20, 4)])
+        events = await self.consume()
         self.ai._execute_memory_tool.assert_not_called()
         self.ai._execute_tool.assert_not_awaited()
+        self.assertFalse(any("event: error" in event for event in events))
+        self.assertEqual(self.ledger.record.call_args.args[0]["usage"], usage(30, 7))
 
     async def test_failed_later_round_preserves_known_usage(self):
         self.upstream([
