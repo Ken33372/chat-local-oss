@@ -147,7 +147,8 @@ const enqueueUpload = (
   file: Blob,
   name: string,
   isImage: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  mode: 'cloud' | 'local'
 ) =>
   new Promise<string>((resolve, reject) => {
     queue.push(async () => {
@@ -156,7 +157,7 @@ const enqueueUpload = (
         return
       }
       try {
-        if (useSettings.getState().mode === 'local') {
+        if (mode === 'local') {
           resolve(await uploadToBackend(id, file, name, signal))
           return
         }
@@ -198,7 +199,8 @@ export const uploadAttachment = (
   id: string,
   blob: Blob,
   name: string,
-  isImage: boolean
+  isImage: boolean,
+  mode = useSettings.getState().mode
 ): Promise<string> => {
   const current = pending.get(id)
   if (current) {
@@ -206,7 +208,7 @@ export const uploadAttachment = (
   }
   const controller = new AbortController()
   setTask(id, { status: 'uploading' })
-  const promise = enqueueUpload(apiKey, id, blob, name, isImage, controller.signal)
+  const promise = enqueueUpload(apiKey, id, blob, name, isImage, controller.signal, mode)
     .then((serverId) => {
       setTask(id, { status: 'done', serverId })
       return serverId

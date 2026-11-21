@@ -9,6 +9,7 @@
     "dev": "cross-env NODE_ENV=development rspack serve -c rspack.config.ts",
     "build": "cross-env NODE_ENV=production rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
+    "test": "node --experimental-vm-modules --test regression.test.mjs",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write ."
   },

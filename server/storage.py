@@ -512,18 +512,17 @@ def clean_sessions(clean_tools: bool, clean_images: bool) -> dict:
 
 # ---------------- 附件原件 ----------------
 
-def _atomic_write(target: Path, data: bytes) -> None:
-    """同一附件可能被并发上传（输入框一次、会话保存一次）；已存在且大小一致就不再重写。
-    Windows 上目标文件被读取时替换会报 WinError 5，失败后短暂重试。"""
+def _atomic_write(target: Path, data: bytes) -> bool:
+    """仅内容相同才复用；Windows 读占用可能导致替换失败，需短暂重试。"""
     with _lock:
-        if target.is_file() and target.stat().st_size == len(data):
-            return
+        if target.is_file() and target.stat().st_size == len(data) and target.read_bytes() == data:
+            return False
         tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_bytes(data)
         for attempt in range(5):
             try:
                 os.replace(tmp, target)
-                return
+                return True
             except PermissionError:
                 if attempt == 4:
                     tmp.unlink(missing_ok=True)
@@ -533,8 +532,9 @@ def _atomic_write(target: Path, data: bytes) -> None:
 
 def save_file(file_id: str, name: str, mime: str, data: bytes) -> None:
     _check_id(file_id)
-    _atomic_write(FILES_DIR / file_id, data)
     with _lock, _conn() as conn:
+        if _atomic_write(FILES_DIR / file_id, data):
+            conn.execute("DELETE FROM file_texts WHERE file_id = ?", (file_id,))
         conn.execute(
             "INSERT INTO files (id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name=excluded.name, mime=excluded.mime, "
@@ -705,15 +705,21 @@ def _staging_size(conn: sqlite3.Connection, file_id: str) -> int | None:
 def _prepare_added_files(
     session: dict, conn: sqlite3.Connection, existing_files: dict[str, dict]
 ) -> tuple[dict[str, str], dict[str, dict]]:
-    """新会话的附件若与现有文件重名但大小不同，换新 ID，避免贴错图。"""
+    """同 ID 的原件按字节比较；内容冲突换新 ID，相同附件仍复用。"""
     meta = _session_file_meta(session)
     file_map: dict[str, str] = {}
     for file_id in meta:
+        _check_id(file_id)
         existing = existing_files.get(file_id)
-        if existing is None:
-            continue
-        staged = _staging_size(conn, file_id)
-        if staged is not None and int(existing.get("size") or 0) != staged:
+        source, target = STAGING_DIR / file_id, FILES_DIR / file_id
+        if source.is_file() and target.is_file():
+            conflict = (source.stat().st_size != target.stat().st_size
+                        or source.read_bytes() != target.read_bytes())
+        else:
+            staged = _staging_size(conn, file_id)
+            conflict = (existing is not None and staged is not None
+                        and int(existing.get("size") or 0) != staged)
+        if conflict:
             file_map[file_id] = str(uuid.uuid4())
     _apply_file_map(session, file_map)
     return file_map, meta
@@ -735,6 +741,7 @@ def _install_files(
         if staged is not None and source.is_file():
             if not (FILES_DIR / new_id).is_file():
                 _atomic_write(FILES_DIR / new_id, source.read_bytes())
+                conn.execute("DELETE FROM file_texts WHERE file_id = ?", (new_id,))
                 copied.append(new_id)
             conn.execute(
                 "INSERT OR REPLACE INTO files (id, name, mime, size, created_at) "
@@ -775,17 +782,19 @@ def _replace_commit() -> dict:
     backup = DATA_DIR / "files_previous"
     with _lock:
         if backup.exists():
-            shutil.rmtree(backup, ignore_errors=True)
-        swapped = False
+            raise RuntimeError(f"存在待检查的附件恢复备份，已停止替换：{backup}")
+        old_moved = False
+        new_moved = False
         staging_rows = []
         try:
             with _conn() as conn:
                 staging_rows = conn.execute("SELECT id, data FROM staging_sessions").fetchall()
             if FILES_DIR.exists():
                 os.replace(FILES_DIR, backup)
+                old_moved = True
             os.replace(STAGING_DIR, FILES_DIR)
+            new_moved = True
             STAGING_DIR.mkdir(parents=True, exist_ok=True)
-            swapped = True
             with _conn() as conn:
                 conn.execute("DELETE FROM sessions")
                 conn.execute("DELETE FROM files")
@@ -818,11 +827,14 @@ def _replace_commit() -> dict:
                 conn.execute("DELETE FROM staging_sessions")
                 conn.execute("DELETE FROM staging_files")
         except Exception:
-            if swapped:
-                shutil.rmtree(FILES_DIR, ignore_errors=True)
-                if backup.exists():
-                    os.replace(backup, FILES_DIR)
-                STAGING_DIR.mkdir(parents=True, exist_ok=True)
+            # 先把导入原件退回暂存，再恢复旧目录；任何一步失败都保留原件。
+            # 下次调用遇到 files_previous 会停止，而不是删除唯一恢复备份。
+            if new_moved:
+                if STAGING_DIR.exists():
+                    STAGING_DIR.rmdir()  # 只移除空目录，绝不吞掉新写入的暂存文件
+                os.replace(FILES_DIR, STAGING_DIR)
+            if old_moved:
+                os.replace(backup, FILES_DIR)
             raise
         shutil.rmtree(backup, ignore_errors=True)
     return {"sessions": list_sessions(), "added": len(staging_rows)}
@@ -855,6 +867,13 @@ def _merge_commit(mode: str) -> dict:
                     else:
                         file_map, meta = _prepare_added_files(session, conn, existing_files)
                     _install_files(conn, file_map, meta, copied)
+                    for old_id in meta:
+                        installed_id = file_map.get(old_id, old_id)
+                        installed = conn.execute(
+                            "SELECT * FROM files WHERE id = ?", (installed_id,)
+                        ).fetchone()
+                        if installed is not None:
+                            existing_files[installed_id] = dict(installed)
                     conn.execute(
                         "INSERT INTO sessions (id, title, created_at, updated_at, data) "
                         "VALUES (?, ?, ?, ?, ?)",

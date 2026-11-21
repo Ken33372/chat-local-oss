@@ -17,8 +17,13 @@ Brave 经 SearXNG 吐出的 /go/ 跳转链会从缩略图代理串里还原原�
 from __future__ import annotations
 
 import base64
+import ipaddress
 import re
+import socket
 import time
+
+import httpcore
+import httpx
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -355,14 +360,135 @@ class _PageText(HTMLParser):
             self.parts.append(text)
 
 
+_HTML_MAX_BYTES = 2 * 1024 * 1024
+_HTML_MAX_REDIRECTS = 5
+
+
+def _public_ip(value: str) -> str:
+    """只接受公网单播地址，包括检查 IPv4 映射地址及 IPv6 隧道内的地址。"""
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as error:
+        raise ProviderError("网页目标不是有效 IP 地址") from error
+    if (
+        "%" in value
+        or not address.is_global
+        or address.is_multicast
+        or address.is_reserved
+        or getattr(address, "is_site_local", False)
+    ):
+        raise ProviderError("网页抓取禁止访问非公网地址")
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped:
+            _public_ip(str(address.ipv4_mapped))
+        if address.sixtofour:
+            _public_ip(str(address.sixtofour))
+        if address.teredo:
+            for embedded in address.teredo:
+                _public_ip(str(embedded))
+        # 标准 NAT64 前缀可把公网形式的 IPv6 翻译成内网 IPv4。
+        if address in ipaddress.ip_network("64:ff9b::/96"):
+            _public_ip(str(ipaddress.IPv4Address(int(address) & 0xFFFFFFFF)))
+    return str(address)
+
+
+def _html_url(value: str | httpx.URL) -> httpx.URL:
+    try:
+        url = httpx.URL(value)
+    except (httpx.InvalidURL, ValueError) as error:
+        raise ProviderError("网页 URL 无效") from error
+    if url.scheme not in ("http", "https") or not url.host or url.userinfo:
+        raise ProviderError("网页抓取只允许无账号信息的 HTTP/HTTPS URL")
+    if "%" in url.host:
+        raise ProviderError("网页抓取禁止访问带区域标识的地址")
+    try:
+        ipaddress.ip_address(url.host)
+    except ValueError:
+        pass  # 域名在实际 connect_tcp 时解析并检查，不能只做请求前预检查。
+    else:
+        _public_ip(url.host)
+    return url
+
+
+class _PublicNetworkBackend(httpcore.SyncBackend):
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        try:
+            answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as error:
+            raise ProviderError("网页域名解析失败") from error
+        # 全部答案先检查；混合公网/内网的 DNS 回答也拒绝，不挑一个放行。
+        addresses = list(dict.fromkeys(_public_ip(answer[4][0]) for answer in answers))
+        if not addresses:
+            raise ProviderError("网页域名没有可用的公网地址")
+        for index, address in enumerate(addresses):
+            try:
+                # 只把规范化的数字 IP 交给底层，不再以原域名连接，避免 DNS 重绑定。
+                # httpcore 的 origin 未改，后续 TLS SNI/证书校验仍使用原域名。
+                return super().connect_tcp(
+                    address, port, timeout=timeout, local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout):
+                if index == len(addresses) - 1:
+                    raise
+
+
+class _PublicHTTPTransport(httpx.HTTPTransport):
+    def __init__(self):
+        super().__init__(trust_env=False)
+        self._pool.close()
+        # HTTPX 尚未暴露 network_backend 参数；仅在此替换 pool，保留其流和异常适配。
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=httpx.create_ssl_context(trust_env=False),
+            network_backend=_PublicNetworkBackend(),
+        )
+
+    def handle_request(self, request):
+        _html_url(request.url)
+        return super().handle_request(request)
+
+
+def _html_client() -> httpx.Client:
+    # 仅网页正文使用此 transport；不改变主动配置的本地搜索/模型等服务。
+    return httpx.Client(
+        transport=_PublicHTTPTransport(), trust_env=False,
+        timeout=httpx.Timeout(60, connect=10), follow_redirects=False,
+        headers={"Accept-Encoding": "identity"},
+    )
+
+
 def _fetch_html(url: str, max_chars: int) -> dict:
-    """SearXNG 只出摘要不出正文，读网页直接抓原站 HTML 去标签。"""
-    with client(60) as http:
-        response = http.get(url, follow_redirects=True)
-    if response.status_code != 200:
-        raise ProviderError(f"网页返回 {response.status_code}")
+    """逐跳检查网页地址，流式读取有限正文；不读取重定向响应的正文。"""
+    target = _html_url(url)
+    with _html_client() as http:
+        for hop in range(_HTML_MAX_REDIRECTS + 1):
+            target = _html_url(target)
+            with http.stream("GET", target, follow_redirects=False) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    if hop == _HTML_MAX_REDIRECTS or not response.headers.get("location"):
+                        raise ProviderError("网页重定向过多或缺少目标地址")
+                    try:
+                        target = _html_url(target.join(response.headers["location"]))
+                    except (httpx.InvalidURL, ValueError) as error:
+                        raise ProviderError("网页重定向 URL 无效") from error
+                    continue
+                if response.status_code != 200:
+                    raise ProviderError(f"网页返回 {response.status_code}")
+                # 请求 identity；拒绝不遵守的压缩响应，避免解压炸弹绕过字节上限。
+                if response.headers.get("content-encoding", "identity").lower().strip() not in ("", "identity"):
+                    raise ProviderError("网页未按请求返回未压缩正文")
+                body = bytearray()
+                for chunk in response.iter_raw(chunk_size=64 * 1024):
+                    body.extend(chunk[:_HTML_MAX_BYTES - len(body)])
+                    if len(body) >= _HTML_MAX_BYTES:
+                        break
+                try:
+                    text = body.decode(response.encoding or "utf-8", errors="replace")
+                except LookupError:
+                    text = body.decode("utf-8", errors="replace")
+                break
     parser = _PageText()
-    parser.feed(response.text)
+    parser.feed(text)
     return {
         "url": url,
         "title": clean_text(parser.title, 200) or url,

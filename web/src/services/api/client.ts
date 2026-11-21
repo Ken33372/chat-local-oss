@@ -147,13 +147,15 @@ const hasFile = (body: CreateMessageRequest) =>
   )
 
 /** 本机后端只接受它需要的字段；DeepSeek 私有字段（safety_check、title、latest_reminder）由后端处理 */
-const toLocalBody = (body: CreateMessageRequest, sessionId?: string) => ({
+export type StreamSettings = Pick<ReturnType<typeof useSettings.getState>, 'mode' | 'maxToolRounds'>
+
+const toLocalBody = (body: CreateMessageRequest, settings: StreamSettings, sessionId?: string) => ({
   model: body.model,
   system: body.system,
   messages: body.messages,
   thinking: body.thinking.type === 'enabled',
   search: body.tools.some((tool) => tool.type === 'deepseek_web_search'),
-  max_tool_rounds: useSettings.getState().maxToolRounds,
+  max_tool_rounds: settings.maxToolRounds,
   ...(body.context_summary ? { context_summary: body.context_summary } : {}),
   // 后端用它填 {session} 请求头，供要求稳定会话 ID 的服务做路由与缓存
   ...(sessionId ? { session_id: sessionId } : {}),
@@ -202,11 +204,10 @@ const VISION_UNAVAILABLE = 'VISION_UNAVAILABLE|'
 const streamLocalMessage = async function* (
   body: CreateMessageRequest,
   signal: AbortSignal,
+  settings: StreamSettings,
   sessionId?: string
 ): AsyncGenerator<MessageStreamEvent> {
-  const run = async function* (
-    imageMode?: 'ocr'
-  ): AsyncGenerator<MessageStreamEvent> {
+  const run = async function* (imageMode?: 'ocr'): AsyncGenerator<MessageStreamEvent> {
     const response = await request('/api/ai/messages', {
       method: 'POST',
       headers: {
@@ -215,7 +216,7 @@ const streamLocalMessage = async function* (
         Accept: 'text/event-stream',
       },
       body: JSON.stringify({
-        ...toLocalBody(body, sessionId),
+        ...toLocalBody(body, settings, sessionId),
         ...(imageMode ? { image_mode: imageMode } : {}),
       }),
       signal,
@@ -245,10 +246,11 @@ export async function* streamMessage(
   apiKey: string,
   body: CreateMessageRequest,
   signal: AbortSignal,
-  sessionId?: string
+  sessionId?: string,
+  settings: StreamSettings = useSettings.getState()
 ): AsyncGenerator<MessageStreamEvent> {
-  if (useSettings.getState().mode === 'local') {
-    yield* streamLocalMessage(body, signal, sessionId)
+  if (settings.mode === 'local') {
+    yield* streamLocalMessage(body, signal, settings, sessionId)
     return
   }
   const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {

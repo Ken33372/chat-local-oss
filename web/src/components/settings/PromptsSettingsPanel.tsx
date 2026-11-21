@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '../base/Button.js'
 import { IconEditOutline16, IconTrashOutline16 } from '../base/icons.js'
 import { Modal } from '../base/Modal.js'
@@ -17,6 +17,21 @@ import styles from './Settings.module.css'
 
 const MAX_TEXT = 8000
 const MAX_CARDS = 30
+
+// 面板关闭/重开也必须等待旧写入，不能只在 UI 上忽略旧响应。
+let promptSave: Promise<PromptsState> | undefined
+const saveInOrder = (next: PromptsState): Promise<PromptsState> => {
+  const task = (promptSave ?? Promise.resolve()).catch(() => {}).then(() => savePrompts(next))
+  promptSave = task
+  void task
+    .finally(() => {
+      if (promptSave === task) {
+        promptSave = undefined
+      }
+    })
+    .catch(() => {})
+  return task
+}
 
 const fail = (error: unknown) =>
   showToast({
@@ -42,6 +57,8 @@ export const PromptsSettingsPanel = () => {
   const [state, setState] = useState<PromptsState | null>(null)
   const [editor, setEditor] = useState<PromptCard | null>(null)
   const [busy, setBusy] = useState(false)
+  const saving = useRef(false)
+  const operation = useRef(0)
   const [deleteArmed, setDeleteArmed] = useState('')
 
   useEffect(() => {
@@ -49,45 +66,74 @@ export const PromptsSettingsPanel = () => {
       return
     }
     let cancelled = false
+    const sequence = ++operation.current
+    saving.current = true
+    setBusy(true)
     void (async () => {
       try {
+        await promptSave?.catch(() => {})
         const loaded = await loadPrompts()
-        if (!cancelled) {
+        if (!cancelled && sequence === operation.current) {
           setState(loaded)
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && sequence === operation.current) {
           fail(error)
+        }
+      } finally {
+        if (!cancelled && sequence === operation.current) {
+          saving.current = false
+          setBusy(false)
         }
       }
     })()
     return () => {
       cancelled = true
+      operation.current += 1
     }
   }, [local])
 
   const persist = async (next: PromptsState) => {
+    if (saving.current) {
+      return
+    }
+    const sequence = ++operation.current
+    saving.current = true
+    setBusy(true)
     const previous = state
     setState(next)
     try {
-      const saved = await savePrompts(next)
+      const saved = await saveInOrder(next)
+      if (sequence !== operation.current) {
+        return
+      }
       setState(saved)
       if (previous) {
         savedToast(previous, saved)
       }
     } catch (error) {
+      if (sequence !== operation.current) {
+        return
+      }
       setState(previous)
       fail(error)
+    } finally {
+      if (sequence === operation.current) {
+        saving.current = false
+        setBusy(false)
+      }
     }
   }
 
   const saveEditor = async () => {
-    if (!state || !editor || busy) {
+    if (!state || !editor || saving.current) {
       return
     }
     if (!editor.name.trim() || !editor.text.trim()) {
       return
     }
+    const sequence = ++operation.current
+    saving.current = true
     setBusy(true)
     const before = state
     try {
@@ -95,19 +141,28 @@ export const PromptsSettingsPanel = () => {
       const cards = exists
         ? state.cards.map((card) => (card.id === editor.id ? editor : card))
         : [...state.cards, editor]
-      const saved = await savePrompts({ ...state, cards })
+      const saved = await saveInOrder({ ...state, cards })
+      if (sequence !== operation.current) {
+        return
+      }
       setState(saved)
       setEditor(null)
       savedToast(before, saved)
     } catch (error) {
+      if (sequence !== operation.current) {
+        return
+      }
       fail(error)
     } finally {
-      setBusy(false)
+      if (sequence === operation.current) {
+        saving.current = false
+        setBusy(false)
+      }
     }
   }
 
   const remove = (card: PromptCard) => {
-    if (!state) {
+    if (!state || saving.current) {
       return
     }
     if (deleteArmed !== card.id) {
@@ -136,6 +191,7 @@ export const PromptsSettingsPanel = () => {
           <div className={styles.description}>{t('promptActiveDescription')}</div>
         </div>
         <Select
+          disabled={busy}
           ariaLabel={t('promptActive')}
           value={state.active}
           options={[
@@ -157,7 +213,7 @@ export const PromptsSettingsPanel = () => {
           <Button
             size="s"
             variant="outlined"
-            disabled={state.cards.length >= MAX_CARDS}
+            disabled={busy || state.cards.length >= MAX_CARDS}
             onClick={() => setEditor({ id: '', name: '', description: '', text: '' })}
           >
             {t('promptAdd')}
@@ -187,19 +243,26 @@ export const PromptsSettingsPanel = () => {
                   <button
                     type="button"
                     className={styles.memoryIconButton}
+                    disabled={busy}
                     title={t('promptEdit')}
                     onClick={() => setEditor(card)}
                   >
                     <IconEditOutline16 />
                   </button>
                   {deleteArmed === card.id ? (
-                    <Button size="s" variant="dangerOutlined" onClick={() => remove(card)}>
+                    <Button
+                      size="s"
+                      variant="dangerOutlined"
+                      disabled={busy}
+                      onClick={() => remove(card)}
+                    >
                       {t('promptDeleteArmed')}
                     </Button>
                   ) : (
                     <button
                       type="button"
                       className={styles.memoryIconButton}
+                      disabled={busy}
                       title={t('promptDelete')}
                       onClick={() => remove(card)}
                     >

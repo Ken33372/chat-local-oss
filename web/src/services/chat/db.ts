@@ -87,9 +87,19 @@ export const loadSession = async (id: string): Promise<Session | undefined> => {
   return (await response.json()) as Session
 }
 
-export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
+export const saveSession = async (
+  session: Session,
+  files: StoredFile[] = [],
+  isCurrent: () => boolean = () => true
+): Promise<void> => {
   for (const file of files) {
+    if (!isCurrent()) {
+      return
+    }
     await sendFile('/api/chat/files', file)
+  }
+  if (!isCurrent()) {
+    return
   }
   const response = await sendJson(
     `/api/chat/sessions/${encodeURIComponent(session.id)}`,
@@ -103,11 +113,9 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
 
 /** 未打开的会话也可重命名 */
 export const renameSession = async (id: string, title: string): Promise<void> => {
-  const response = await sendJson(
-    `/api/chat/sessions/${encodeURIComponent(id)}/title`,
-    'PATCH',
-    { title }
-  )
+  const response = await sendJson(`/api/chat/sessions/${encodeURIComponent(id)}/title`, 'PATCH', {
+    title,
+  })
   if (!response.ok) {
     await fail(response, '重命名会话')
   }
@@ -155,17 +163,16 @@ const maintenance = async <T>(path: string, body: unknown): Promise<T> => {
   return (await response.json()) as T
 }
 
-export const previewMaintenance = (
-  body: Record<string, unknown>
-): Promise<MaintenancePreview> => maintenance('preview', body)
+export const previewMaintenance = (body: Record<string, unknown>): Promise<MaintenancePreview> =>
+  maintenance('preview', body)
 
-export const deleteSessionsByTime = (
-  body: Record<string, unknown>
-): Promise<MaintenanceResult> => maintenance('delete', body)
+export const deleteSessionsByTime = (body: Record<string, unknown>): Promise<MaintenanceResult> =>
+  maintenance('delete', body)
 
-export const cleanSessionContent = (
-  body: { toolRecords: boolean; images: boolean }
-): Promise<MaintenanceResult> => maintenance('clean', body)
+export const cleanSessionContent = (body: {
+  toolRecords: boolean
+  images: boolean
+}): Promise<MaintenanceResult> => maintenance('clean', body)
 
 export const saveFiles = async (files: StoredFile[]): Promise<void> => {
   for (const file of files) {

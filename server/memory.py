@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import array
+import hashlib
 import json
 import logging
 import math
@@ -146,12 +147,16 @@ def stats() -> dict:
     with storage._conn() as conn:
         items = conn.execute("SELECT COUNT(*) AS n FROM memories").fetchone()["n"]
         pinned = conn.execute("SELECT COUNT(*) AS n FROM memories WHERE pinned = 1").fetchone()["n"]
+        identity = _embedding_identity()
         vectors = conn.execute(
-            "SELECT COUNT(*) AS n, MIN(model) AS model, MIN(dim) AS dim FROM memory_vectors"
+            "SELECT COUNT(*) AS n, MIN(dim) AS dim FROM memory_vectors WHERE model = ?",
+            (identity,),
         ).fetchone()
         missing = conn.execute(
             "SELECT COUNT(*) AS n FROM memories m "
-            "LEFT JOIN memory_vectors v ON v.memory_id = m.id WHERE v.memory_id IS NULL"
+            "LEFT JOIN memory_vectors v ON v.memory_id = m.id AND v.model = ? "
+            "WHERE v.memory_id IS NULL",
+            (identity,),
         ).fetchone()["n"]
         pending = conn.execute(
             "SELECT COUNT(*) AS n FROM memory_proposals WHERE status = 'pending'"
@@ -162,7 +167,7 @@ def stats() -> dict:
         "pinned": pinned,
         "vectors": vectors["n"],
         "vectors_missing": missing if embedding_provider.configured() else 0,
-        "vector_model": vectors["model"] or "",
+        "vector_model": config.EMBEDDING_MODEL if vectors["n"] else "",
         "vector_dim": vectors["dim"] or 0,
         "pending": pending,
         "inject_mode": config.MEMORY_INJECT_MODE,
@@ -413,11 +418,35 @@ def _embed_text(row: dict) -> str:
     return f"{description}\n{row['text']}" if description else row["text"]
 
 
+def _embedding_identity() -> str:
+    """服务地址、模型和维度共同标识向量空间；旧的纯模型名记录会自动重建。"""
+    settings = [
+        str(getattr(config, name, ""))
+        for name in ("EMBEDDING_BASE_URL", "EMBEDDING_MODEL", "EMBEDDING_DIM")
+    ]
+    digest = hashlib.sha256(json.dumps(settings).encode("utf-8")).hexdigest()
+    return f"{config.EMBEDDING_MODEL}@{digest}"
+
+
+def _same_content(snapshot: dict, current) -> bool:
+    return (current is not None and snapshot["text"] == current["text"]
+            and snapshot.get("description", "") == current["description"])
+
+
+def _current_rows(rows: list[dict]) -> list[dict]:
+    """网络调用后只返回仍与读取快照一致的条目，删除/编辑过的留待下轮检索。"""
+    with storage._lock, storage._conn() as conn:
+        current = {row["id"]: row for row in conn.execute("SELECT * FROM memories")}
+        return [row for row in rows if _same_content(row, current.get(row["id"]))]
+
+
 def _sync_vectors(rows: list[dict]) -> dict[int, list[float]]:
-    """确保这些记忆都有当前模型/维度的向量；缺的批量补上。"""
-    model = config.EMBEDDING_MODEL
+    """补齐向量；计算期间允许编辑，但回写必须核对正文和说明快照。"""
+    model = _embedding_identity()
     dim = int(config.EMBEDDING_DIM)
-    with storage._conn() as conn:
+    with storage._lock, storage._conn() as conn:
+        current = {row["id"]: row for row in conn.execute("SELECT * FROM memories")}
+        rows = [row for row in rows if _same_content(row, current.get(row["id"]))]
         known = {
             row["memory_id"]: _unpack(row["vec"])
             for row in conn.execute(
@@ -429,7 +458,14 @@ def _sync_vectors(rows: list[dict]) -> dict[int, list[float]]:
     if missing:
         vectors = embedding_provider.embed_batched([_embed_text(row) for row in missing])
         with storage._lock, storage._conn() as conn:
+            if model != _embedding_identity():
+                raise RuntimeError("向量服务配置已变化，请重试")
             for row, vec in zip(missing, vectors):
+                current = conn.execute(
+                    "SELECT text, description FROM memories WHERE id = ?", (row["id"],)
+                ).fetchone()
+                if not _same_content(row, current):
+                    continue
                 if len(vec) != dim:
                     raise RuntimeError(f"向量维度不一致：配置 {dim}，接口返回 {len(vec)}")
                 unit = _norm(vec)
@@ -439,16 +475,18 @@ def _sync_vectors(rows: list[dict]) -> dict[int, list[float]]:
                     "(memory_id, model, dim, vec, updated_at) VALUES (?, ?, ?, ?, ?)",
                     (row["id"], model, dim, _pack(unit), _now()),
                 )
-    return {row["id"]: known[row["id"]] for row in rows if row["id"] in known}
+    return {row["id"]: known[row["id"]] for row in _current_rows(rows) if row["id"] in known}
 
 
 def _query_vector(text: str) -> list[float]:
-    key = (config.EMBEDDING_MODEL, text)
+    key = (_embedding_identity(), text)
+    dim = int(config.EMBEDDING_DIM)
     cached = _QUERY_CACHE.get(key)
     if cached is not None:
         return cached
     vec = _norm(embedding_provider.embed([text])[0])
-    dim = int(config.EMBEDDING_DIM)
+    if key[0] != _embedding_identity():
+        raise RuntimeError("向量服务配置已变化，请重试")
     if dim and len(vec) != dim:
         raise RuntimeError(f"向量维度不一致：配置 {dim}，接口返回 {len(vec)}")
     if len(_QUERY_CACHE) > 32:
@@ -469,15 +507,18 @@ def _rerank_rows(query: str, picked: list[dict], top: int) -> list[dict]:
 
 
 def _semantic_order(query: str, rows: list[dict], top: int) -> list[dict]:
+    identity = _embedding_identity()
     vectors = _sync_vectors(rows)
     query_vec = _query_vector(query)
+    if identity != _embedding_identity():
+        raise RuntimeError("向量服务配置已变化，请重试")
     pairs = [
         (_cos(query_vec, vectors[row["id"]]), row) for row in rows if row["id"] in vectors
     ]
     # 低于门槛的不算“相关”，宁可少注入也不硬塞
     pairs = [item for item in pairs if item[0] >= config.MEMORY_SIM_THRESHOLD]
     pairs.sort(key=lambda item: item[0], reverse=True)
-    return _rerank_rows(query, [row for _, row in pairs], top)
+    return _current_rows(_rerank_rows(query, [row for _, row in pairs], top))
 
 
 def _tokens(query: str) -> list[str]:
@@ -566,6 +607,7 @@ def injection(query: str = "") -> tuple[str, set[int]]:
                 if row["id"] not in chosen:
                     picked.append(row)
                     chosen.add(row["id"])
+    picked = _current_rows(picked)
     body = "\n".join(
         f"- {row['text']}（说明：{row['description']}）"
         if row["description"]
@@ -600,6 +642,7 @@ def search(
         picked = _keyword_order(query, rows)[:5]
     if not picked:
         picked = _score_order(query, rows)[:5]
+    picked = _current_rows(picked)
     if not picked:
         _log.info("memory search mode=%s hits=0 ms=%d", mode, round((time.perf_counter() - started) * 1000))
         return "没有找到未注入本轮上下文的记忆。", []
@@ -713,8 +756,10 @@ def propose_edit(
         payload: dict = {"text": text, "old_text": target["text"], "target_id": target["id"]}
         if pinned is not None:
             payload["pinned"] = bool(pinned)
+            payload["old_pinned"] = bool(target["pinned"])
         if clean_description is not None:
             payload["description"] = clean_description
+            payload["old_description"] = target["description"]
         cursor = conn.execute(
             "INSERT INTO memory_proposals (kind, payload, status, created_at, session_id) "
             "VALUES ('edit', ?, 'pending', ?, ?)",
@@ -802,6 +847,12 @@ def accept_proposal(proposal_id: int) -> dict:
             if target is None or not text:
                 _set_status(conn, proposal_id, "rejected")
                 raise ValueError("原记忆已不存在，这条修改作废")
+            if (
+                payload.get("old_text") != target["text"]
+                or ("description" in payload and payload.get("old_description") != target["description"])
+                or ("pinned" in payload and payload.get("old_pinned") != bool(target["pinned"]))
+            ):
+                raise ValueError("原记忆已修改或缺少原始快照，请忽略旧提案并重新确认修改")
             similar = _find_similar(conn, text)
             if similar is not None and similar["id"] != target_id:
                 raise ValueError(f"已有相似记忆：{similar['text']}")
@@ -830,6 +881,9 @@ def accept_proposal(proposal_id: int) -> dict:
         if text:
             similar = _find_similar(conn, text)
             if similar is None:
+                count = conn.execute("SELECT COUNT(*) AS n FROM memories").fetchone()["n"]
+                if count >= MAX_ITEMS:
+                    raise ValueError(f"记忆已达 {MAX_ITEMS} 条上限，请先整理")
                 now = _now()
                 cursor = conn.execute(
                     "INSERT INTO memories "

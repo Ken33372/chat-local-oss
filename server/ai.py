@@ -31,6 +31,7 @@ from providers import llm
 from providers import ocr as ocr_provider
 from providers import search
 import storage
+import usage as usage_store
 
 DOC_EXTS = {"pdf", "doc", "docx", "ppt", "pptx"}
 IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp", "bmp"}
@@ -856,7 +857,7 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     messages, reminder = await _prepare_messages(raw_messages, force_ocr=force_ocr)
     has_image = _has_image(raw_messages)
     summary_text = str(body.get("context_summary") or "").strip()
-    memory_block, injected_ids = memory.injection(_latest_user_text(raw_messages))
+    memory_block, injected_ids = await asyncio.to_thread(memory.injection, _latest_user_text(raw_messages))
     if config.MEMORY_ENABLED:
         # 用户在设置里确认/忽略过的提案，下一轮告诉模型一次，避免它仍以为“待确认”
         outcome = memory.take_session_events(session)
@@ -920,6 +921,8 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
     }
     if tools:
         payload_base["tools"] = tools
+    allowed_tools = {tool["name"] for tool in tools}
+    request_model = config.LLM_MODEL
     logger.info(
         "chat start model=%s messages=%d rounds_max=%d search=%s thinking=%s session=%s",
         config.LLM_MODEL,
@@ -937,6 +940,9 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
             "cache_read_input_tokens": 0,
             "output_tokens": 0,
         }
+        request_id = f"msg_local_{uuid.uuid4().hex}"
+        rounds_usage: list[dict] = []
+        upstream = None
         stop_reason = "end_turn"
         out_index = 0
         yield sse(
@@ -944,8 +950,8 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
             {
                 "type": "message_start",
                 "message": {
-                    "id": f"msg_local_{uuid.uuid4().hex[:12]}",
-                    "model": config.LLM_MODEL,
+                    "id": request_id,
+                    "model": request_model,
                     "usage": usage,
                 },
             },
@@ -977,13 +983,19 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                 index_map: dict[int, int] = {}
                 text_streams: dict[int, dict] = {}
                 stop_reason = "end_turn"
-                round_usage: dict | None = None
-                async for event in llm.stream({**payload_base, "messages": current}, session=session):
+                round_usage = {key: 0 for key in usage}
+                rounds_usage.append(round_usage)
+                payload = {**payload_base, "messages": current}
+                if round_index == max_rounds:
+                    payload.pop("tools", None)
+                upstream = llm.stream(payload, session=session)
+                async for event in upstream:
                     kind = event.get("type")
                     if kind in ("ping", None):
                         continue
                     if kind == "message_start":
-                        round_usage = (event.get("message") or {}).get("usage") or round_usage
+                        reported = (event.get("message") or {}).get("usage") or {}
+                        round_usage.update({key: reported[key] for key in round_usage if key in reported})
                         continue
                     if kind == "content_block_start":
                         block = event.get("content_block") or {}
@@ -1064,10 +1076,12 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                     if kind == "message_delta":
                         delta = event.get("delta") or {}
                         stop_reason = delta.get("stop_reason") or "end_turn"
-                        round_usage = event.get("usage") or round_usage
+                        reported = event.get("usage") or {}
+                        round_usage.update({key: reported[key] for key in round_usage if key in reported})
                         continue
                     if kind == "message_stop":
                         break
+                await upstream.aclose()
                 for state in text_streams.values():
                     if state["buf"]:
                         yield _text_delta(state["out"], state["buf"])
@@ -1085,6 +1099,12 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                     call["server_id"] = f"srvtoolu_local_{uuid.uuid4().hex[:10]}"
 
                 if stop_reason == "tool_use" and calls:
+                    if round_index >= max_rounds:
+                        break
+                    if any(call["name"] not in allowed_tools for call in calls):
+                        raise UpstreamError("模型请求了本轮未启用的工具，已停止执行。")
+                    if any(not isinstance(call["input"], dict) for call in calls):
+                        raise UpstreamError("模型工具参数必须是 JSON 对象。")
                     assistant_blocks: list[dict] = []
                     text = "".join(round_text).strip()
                     if text:
@@ -1106,7 +1126,8 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                     )
                     for call in calls:
                         if call["name"] in memory.TOOL_NAMES:
-                            text_for_model, notice = _execute_memory_tool(
+                            text_for_model, notice = await asyncio.to_thread(
+                                _execute_memory_tool,
                                 call["name"],
                                 call["input"],
                                 injected_ids,
@@ -1216,6 +1237,23 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
                 # 前端看到该前缀会改用 OCR 重试一次；引擎的视觉准入失败发生在出 token 之前。
                 message = "VISION_UNAVAILABLE|" + message
             yield sse("error", {"type": "error", "error": {"message": message}})
+        finally:
+            total_usage = {
+                key: sum(usage_store._count(row.get(key)) for row in rounds_usage)
+                for key in usage
+            }
+            try:
+                usage_store.record({
+                    "id": request_id,
+                    "session_id": session,
+                    "model": request_model,
+                    "mode": "local",
+                    "usage": total_usage,
+                })
+            except Exception:
+                logger.exception("Failed to record local request usage")
+            if upstream is not None:
+                await upstream.aclose()
 
     return gen()
 

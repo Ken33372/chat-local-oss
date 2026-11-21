@@ -78,8 +78,12 @@ def _block(name: str) -> dict:
 
 
 def _domains(name: str, file_value: object) -> list[str]:
-    """站点规则：环境变量是逗号串，config.json 里可以是数组，两种都收。"""
-    raw = file_value if isinstance(file_value, (list, tuple)) else _env(name).replace("\n", ",")
+    """站点规则：非空环境变量优先；兼容逗号/换行串及配置数组。"""
+    raw = _env(name) or file_value
+    if isinstance(raw, str):
+        raw = raw.replace("\n", ",").split(",")
+    if not isinstance(raw, (list, tuple)):
+        return []
     return [str(item).strip().lower() for item in raw if str(item).strip()]
 
 

@@ -34,18 +34,38 @@ export const UsageSettingsPanel = () => {
   const [clearArmed, setClearArmed] = useState(false)
   const [clearing, setClearing] = useState(false)
   const priced = useRef(false)
+  const currentRange = useRef(30)
+  const loadSequence = useRef(0)
+  const mounted = useRef(true)
 
   const load = async (range: number) => {
-    const next = await loadUsageSummary(range)
-    setSummary(next)
-    if (!priced.current) {
-      priced.current = true
-      setDraft(next.pricing)
+    if (!mounted.current || range !== currentRange.current) {
+      return
+    }
+    const sequence = ++loadSequence.current
+    const current = () =>
+      mounted.current && sequence === loadSequence.current && range === currentRange.current
+    try {
+      const next = await loadUsageSummary(range)
+      if (!current()) {
+        return
+      }
+      setError('')
+      setSummary(next)
+      if (!priced.current) {
+        priced.current = true
+        setDraft(next.pricing)
+      }
+    } catch (reason) {
+      if (current()) {
+        throw reason
+      }
     }
   }
 
   useEffect(() => {
     let alive = true
+    mounted.current = true
     setError('')
     load(days).catch((reason) => {
       if (alive) {
@@ -54,6 +74,8 @@ export const UsageSettingsPanel = () => {
     })
     return () => {
       alive = false
+      mounted.current = false
+      loadSequence.current += 1
     }
     // day 切换时才重新拉取
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,7 +89,7 @@ export const UsageSettingsPanel = () => {
     try {
       const saved = await saveUsagePricing(draft)
       setDraft(saved)
-      await load(days)
+      await load(currentRange.current)
       showToast({ key: 'usageSaved' })
     } catch (reason) {
       showToast({
@@ -89,7 +111,7 @@ export const UsageSettingsPanel = () => {
     setClearing(true)
     try {
       await clearUsage()
-      await load(days)
+      await load(currentRange.current)
       showToast({ key: 'usageCleared' })
     } catch (reason) {
       showToast({
@@ -104,7 +126,15 @@ export const UsageSettingsPanel = () => {
 
   const price = (key: 'input' | 'cache_read' | 'output') => (
     <label className={styles.usagePriceField}>
-      <span>{t(key === 'input' ? 'usagePriceInput' : key === 'cache_read' ? 'usagePriceCache' : 'usagePriceOutput')}</span>
+      <span>
+        {t(
+          key === 'input'
+            ? 'usagePriceInput'
+            : key === 'cache_read'
+              ? 'usagePriceCache'
+              : 'usagePriceOutput'
+        )}
+      </span>
       <input
         className={styles.memoryInput}
         type="number"
@@ -121,13 +151,22 @@ export const UsageSettingsPanel = () => {
     </label>
   )
 
-  const row = (item: UsageBucket & { date?: string; model?: string; mode?: string }, index: number) => (
+  const row = (
+    item: UsageBucket & { date?: string; model?: string; mode?: string },
+    index: number
+  ) => (
     <tr key={item.date ?? `${item.model}-${item.mode}-${index}`}>
       {item.date ? <td>{item.date}</td> : null}
       {item.model !== undefined ? (
         <>
           <td className={styles.usageModelCell}>{item.model || t('usageUnnamedModel')}</td>
-          <td>{item.mode === 'cloud' ? t('usageModeCloud') : item.mode === 'local' ? t('usageModeLocal') : '—'}</td>
+          <td>
+            {item.mode === 'cloud'
+              ? t('usageModeCloud')
+              : item.mode === 'local'
+                ? t('usageModeLocal')
+                : '—'}
+          </td>
         </>
       ) : null}
       <td>{num(item.calls)}</td>
@@ -141,7 +180,14 @@ export const UsageSettingsPanel = () => {
   const head = (withDate: boolean) => (
     <thead>
       <tr>
-        {withDate ? <th>{t('usageDate')}</th> : <><th>{t('usageModel')}</th><th>{t('usageMode')}</th></>}
+        {withDate ? (
+          <th>{t('usageDate')}</th>
+        ) : (
+          <>
+            <th>{t('usageModel')}</th>
+            <th>{t('usageMode')}</th>
+          </>
+        )}
         <th>{t('usageCalls')}</th>
         <th>{t('usageInput')}</th>
         <th>{t('usageCacheRead')}</th>
@@ -160,7 +206,14 @@ export const UsageSettingsPanel = () => {
             key={range}
             type="button"
             className={range === days ? styles.usageRangeActive : styles.usageRangeButton}
-            onClick={() => setDays(range)}
+            onClick={() => {
+              if (currentRange.current === range) {
+                return
+              }
+              currentRange.current = range
+              loadSequence.current += 1
+              setDays(range)
+            }}
           >
             {t('usageRange', { days: String(range) })}
           </button>
@@ -178,7 +231,9 @@ export const UsageSettingsPanel = () => {
             </div>
             <div className={styles.usageCard}>
               <div className={styles.usageCardLabel}>{t('usageInput')}</div>
-              <div className={styles.usageCardValue}>{num(summary.totals.input + summary.totals.cache_creation)}</div>
+              <div className={styles.usageCardValue}>
+                {num(summary.totals.input + summary.totals.cache_creation)}
+              </div>
             </div>
             <div className={styles.usageCard}>
               <div className={styles.usageCardLabel}>{t('usageCacheRead')}</div>
@@ -206,7 +261,9 @@ export const UsageSettingsPanel = () => {
               <div className={styles.usageTableWrap}>
                 <table className={styles.usageTable}>
                   {head(true)}
-                  <tbody>{[...summary.daily].reverse().map((item, index) => row(item, index))}</tbody>
+                  <tbody>
+                    {[...summary.daily].reverse().map((item, index) => row(item, index))}
+                  </tbody>
                 </table>
               </div>
             ) : (
@@ -242,12 +299,19 @@ export const UsageSettingsPanel = () => {
                     { value: 'CNY', label: 'CNY' },
                     { value: 'USD', label: 'USD' },
                   ]}
-                  onChange={(value) => draft && setDraft({ ...draft, currency: value as 'CNY' | 'USD' })}
+                  onChange={(value) =>
+                    draft && setDraft({ ...draft, currency: value as 'CNY' | 'USD' })
+                  }
                 />
               </label>
             </div>
             <div className={styles.memoryFooter}>
-              <Button variant="outlined" size="m" disabled={!draft || saving} onClick={() => void save()}>
+              <Button
+                variant="outlined"
+                size="m"
+                disabled={!draft || saving}
+                onClick={() => void save()}
+              >
                 {t('usageSave')}
               </Button>
             </div>

@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+from contextlib import aclosing
 from typing import AsyncGenerator
 from urllib.parse import urlsplit
 
@@ -561,11 +562,9 @@ async def stream(payload: dict, session: str = "") -> AsyncGenerator[dict, None]
         "model": str(payload.get("model") or ""),
         "session": session_id(session, payload.get("messages")),
     }
-    if provider() == "openai":
-        async for event in _stream_openai(payload, context):
-            yield event
-    else:
-        async for event in _stream_anthropic(payload, context):
+    upstream = _stream_openai(payload, context) if provider() == "openai" else _stream_anthropic(payload, context)
+    async with aclosing(upstream):
+        async for event in upstream:
             yield event
 
 
