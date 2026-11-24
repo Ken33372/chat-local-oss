@@ -64,7 +64,10 @@ async def save_session(session_id: str, request: Request) -> dict:
     session = await request.json()
     if not isinstance(session, dict) or session.get("id") != session_id:
         raise HTTPException(status_code=400, detail="会话 ID 不一致")
-    storage.save_session(session)
+    try:
+        storage.save_session(session)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     return {"ok": True}
 
 
@@ -132,6 +135,85 @@ def delete_session(session_id: str, request: Request) -> dict:
     guard(request)
     storage.delete_session(session_id)
     return {"ok": True}
+
+
+# ---------------- 工作区 ----------------
+
+@app.get("/api/chat/workspaces")
+def list_workspaces(request: Request) -> dict:
+    guard(request)
+    return {"workspaces": storage.list_workspaces()}
+
+
+@app.post("/api/chat/workspaces")
+async def create_workspace(request: Request) -> dict:
+    guard(request)
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    try:
+        return storage.create_workspace(body.get("name"), body.get("cardId"))
+    except storage.NotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.patch("/api/chat/workspaces/{workspace_id}")
+async def update_workspace(workspace_id: str, request: Request) -> dict:
+    guard(request)
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是对象")
+    changes = {}
+    if "name" in body:
+        changes["name"] = body["name"]
+    if "cardId" in body:
+        changes["card_id"] = body["cardId"]
+    if "sortOrder" in body:
+        changes["sort_order"] = body["sortOrder"]
+    try:
+        return storage.update_workspace(workspace_id, **changes)
+    except storage.NotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.delete("/api/chat/workspaces/{workspace_id}")
+def delete_workspace(workspace_id: str, request: Request) -> dict:
+    guard(request)
+    try:
+        return storage.delete_workspace(workspace_id)
+    except storage.NotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.patch("/api/chat/sessions/{session_id}/workspace")
+async def move_session_workspace(session_id: str, request: Request) -> dict:
+    guard(request)
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON")
+    if not isinstance(body, dict) or "workspaceId" not in body:
+        raise HTTPException(status_code=400, detail="缺少 workspaceId")
+    workspace_id = body["workspaceId"]
+    try:
+        storage.move_session(session_id, workspace_id)
+    except storage.NotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return {"ok": True, "workspaceId": workspace_id}
 
 
 @app.post("/api/chat/files/{file_id}")
@@ -512,6 +594,8 @@ async def messages(request: Request):
         raise HTTPException(status_code=400, detail="请求体必须是对象")
     try:
         generator = await ai.stream_chat(body, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     except ai.UpstreamError as error:
         raise HTTPException(status_code=503, detail=str(error))
     return StreamingResponse(

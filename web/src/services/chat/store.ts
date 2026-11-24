@@ -81,6 +81,8 @@ type ChatState = {
   sessionSaveErrors: Record<string, boolean>
   /** null 表示新对话（欢迎页） */
   activeId: string | null
+  /** newChat 选定的工作区，供随后 sendMessage(null) 创建会话时消费。 */
+  pendingWorkspaceId: string | null
   /** 正在生成回复的会话 */
   streaming: Record<string, AbortController>
 }
@@ -94,6 +96,7 @@ export const useChatStore = create<ChatState>(() => ({
   sessionLoadErrors: {},
   sessionSaveErrors: {},
   activeId: null,
+  pendingWorkspaceId: null,
   streaming: {},
 }))
 
@@ -113,7 +116,10 @@ const getStreamController = (id: string) => {
 }
 
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
-  a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
+  a.title === b.title &&
+  a.createdAt === b.createdAt &&
+  a.updatedAt === b.updatedAt &&
+  (a.workspaceId ?? null) === (b.workspaceId ?? null)
 
 const sessionAccess = new Map<string, number>()
 const unsavedSessions = new Set<string>()
@@ -260,6 +266,14 @@ const persist = (sessionId: string) => {
 export const retrySaveSessions = () => {
   if (!get().importingHistory) {
     unsavedSessions.forEach(persist)
+  }
+}
+
+/** 工作区移动只等当前这次落盘，不等待整段流式回复结束。 */
+export const waitForSessionSave = async (sessionId: string) => {
+  await sessionSaves.get(sessionId)
+  if (get().sessionSaveErrors[sessionId]) {
+    throw new Error('会话尚未保存，请重试后移动')
   }
 }
 
@@ -477,6 +491,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
       sessionLoadErrors: {},
       sessionSaveErrors: {},
       activeId: null,
+      pendingWorkspaceId: null,
     })
     return summaries.length
   } finally {
@@ -528,9 +543,10 @@ export const mergeHistory = async (
   }
 }
 
-export const newChat = () => {
+/** workspaceId 为 null 时创建未分组对话；具体工作区由侧栏筛选显式传入。 */
+export const newChat = (workspaceId: string | null = null) => {
   if (!get().importingHistory) {
-    set({ activeId: null })
+    set({ activeId: null, pendingWorkspaceId: workspaceId })
     trimSessionCache()
   }
 }
@@ -538,7 +554,7 @@ export const newChat = () => {
 export const selectSession = (id: string) => {
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
     touchSession(id)
-    set({ activeId: id })
+    set({ activeId: id, pendingWorkspaceId: null })
     void ensureSessionLoaded(id)
     trimSessionCache()
   }
@@ -647,6 +663,7 @@ export const refreshAfterMaintenance = async (): Promise<void> => {
     sessionLoadErrors: {},
     sessionSaveErrors: {},
     activeId: state.activeId && ids.has(state.activeId) ? state.activeId : null,
+    pendingWorkspaceId: null,
   }))
   const { activeId } = get()
   if (activeId !== null) {
@@ -727,7 +744,7 @@ const requestHistory = (history: Message[], session: Session): Message[] =>
  * 提交指定会话的最新草稿；null 表示新建会话。
  * 同步接收成功才清空草稿，附件原件由会话接管；保存失败仍通过保存入口重试。
  */
-export const sendMessage = (targetSessionId: string | null) => {
+export const sendMessage = (targetSessionId: string | null, workspaceId?: string | null) => {
   if (get().importingHistory || !get().ready) {
     return false
   }
@@ -753,6 +770,7 @@ export const sendMessage = (targetSessionId: string | null) => {
       title: '',
       createdAt: now,
       updatedAt: now,
+      workspaceId: workspaceId !== undefined ? workspaceId : (get().pendingWorkspaceId ?? null),
       messages: [],
       rootMessageId: null,
     }
@@ -762,6 +780,7 @@ export const sendMessage = (targetSessionId: string | null) => {
       sessions: [toSessionSummary(session), ...state.sessions],
       sessionCache: { ...state.sessionCache, [session.id]: session },
       activeId: session.id,
+      pendingWorkspaceId: null,
     }))
   }
   const current = getSession(sessionId)
@@ -1383,7 +1402,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           },
           controller.signal,
           sessionId,
-          settings
+          settings,
+          getSession(sessionId)?.workspaceId ?? null
         )
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {

@@ -310,6 +310,7 @@ export const toLocalSession = (
     title: file.title ?? '',
     createdAt: time(file.inserted_at),
     updatedAt: time(file.updated_at),
+    workspaceId: null,
     ...buildTree(file, options),
   }
   const images = new Map<string, string>()

@@ -14,8 +14,9 @@ Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Rec
 
 This is a **community snapshot (v0.1.3)**, not a continuously maintained product.
 
-- The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted path has been smoke-tested.
+- The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted core paths have offline regression tests, which do not replace testing in real environments.
 - **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
+- **`main` contains reliability fixes and new features added after v0.1.3** (session saving, import, usage accounting, tool execution, web-fetch boundaries, workspace role cards and streaming performance work); the v0.1.3 portable ZIP on the Releases page predates them. Run from source or build it yourself for the latest code.
 - Issues and PRs are best-effort. Back up `data/` before upgrading; do not treat it as your only copy.
 - When reporting a problem, include your OS, model provider, reproduction steps, and relevant logs.
 
@@ -66,6 +67,17 @@ Windows x64 users can download the portable ZIP from [Releases](https://github.c
 If nothing is configured yet, the first visit shows a step-by-step wizard: pick **DeepSeek Cloud** (enter an API key and you are done; it jumps straight to Data management) or **self-hosted backend**. For self-hosted, configure the model first, then tick the extras you want (search, attachment parsing, voice, rerank and embeddings); every later step can be skipped. Changes take effect immediately.
 
 If you already configured everything through `.env`, skip the wizard. The precedence of the two sources, the wizard entry point and every variable are documented under [Configuration](#configuration).
+
+### Development and tests
+
+The repository includes offline regression tests that do not read `.env` or `data/` and need no real model or API key:
+
+```bash
+python -m unittest discover -s tests
+cd web && npm test && npm run type && npm run lint
+```
+
+For a production frontend build, use `cd web && npm run build` (or `build.bat` in the repository root).
 
 ## Two modes
 
@@ -137,8 +149,9 @@ LLM, search, ASR and attachment parsing are configured independently:
 
 ### Conversations and data
 
-- **Local storage:** FastAPI + SQLite store chats and attachments in `data/chat.db` and `data/files/`.
-- **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import.
+- **Local storage:** FastAPI + SQLite store chats, workspaces and attachments in `data/chat.db` and `data/files/`.
+- **Workspaces:** create, rename and delete them in Settings → Workspaces. Filter the sidebar by workspace; new chats started there belong to it automatically. Move chats from the session menu. Deleting a workspace moves its chats to Ungrouped and never deletes them.
+- **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import. ZIP files contain chats and attachments only, not workspaces or role cards; imported chats are ungrouped.
 - **Chat search:** search message text from the sidebar; results are grouped by chat with matching snippets. Archived chats are excluded.
 - **Archive and restore:** archive from the session menu; open, restore, or permanently delete archived chats under Settings → Data management → View archive.
 - **Chat cleanup:** delete chats older than N years/months or inside a date range; remove tool-call records and image originals from all chats.
@@ -148,17 +161,19 @@ LLM, search, ASR and attachment parsing are configured independently:
 - **Context management:** usage indicator, local compression, and configurable context/output limits. Cloud mode only shows usage; its limit is fixed by DeepSeek.
 - **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
+- **Tool switches:** once search is configured, link reading is always declared (whether a body can actually be fetched still depends on the provider); the search toggle only controls web search and in-page find (the latter also needs thinking). If the model calls a tool that is disabled for the round, that call is skipped and the reply continues instead of being aborted.
 - **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank), the model can search them and propose new or edited entries, a proposal only takes effect after you confirm it, each entry can carry a short matching description, and near-duplicates can be merged by hand. Export to txt and import txt/JSON (duplicates are skipped). Automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
 
-- **Prompts (role cards):** Settings → Prompts. Named cards with exactly one active globally; the body is appended after the built-in rules. Up to 30 cards and 8000 characters each, stored in `data/prompts.json`.
+- **Prompts (role cards):** Settings → Prompts. Named cards with exactly one active globally; the body is appended after the built-in rules. Up to 30 cards and 8000 characters each, stored in `data/prompts.json`. Self-hosted mode can bind a different card to each workspace, with priority “workspace card → global card”; unbound workspaces, legacy chats and missing cards fall back to the global card. Cloud mode can organize chats into workspaces but does not bind role cards.
 
 ### UI and configuration
 
 - **First-run wizard:** choose DeepSeek Cloud or a custom backend first; Cloud finishes as soon as the key is saved and jumps to data management. Custom goes through model → optional features (search, attachment parsing, voice, rerank and embeddings), and every later step can be skipped; rerank, embedding and read-aloud live in that flow. Saving takes effect immediately, and you can reopen it from Settings → General.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
-- **Usage statistics:** Settings → Usage. Totals for requests, input / cache-read / output tokens, cache hit rate and estimated cost over 7 / 30 / 90 days, broken down by model; unit prices are per million tokens and 0 means free. Chat requests only, stored in the local `chat.db`.
+- **Usage statistics:** Settings → Usage. Totals for requests, input / cache-read / output tokens, cache hit rate and estimated cost over 7 / 30 / 90 days, broken down by model; unit prices are per million tokens and 0 means free. Chat requests only, stored in the local `chat.db`; self-hosted requests are recorded by the backend across all tool rounds, while cloud requests are reported by the client and queued for retry on failure.
 - **Debug panel:** click the sidebar title five times within 1.5 s. Status shows configuration and vector coverage per service, plus the active prompt card and its length, the memory similarity threshold, the enabled search engine count and the read-aloud voice; Logs shows the last 800 backend lines including request timings; Probes make one real request to LLM / Embedding / Rerank / Search / memory retrieval / speech input / read-aloud and report result and latency.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
+- **Streaming performance work:** the active chat subscribes separately so every token does not rerender the whole app; context estimates are throttled to roughly 250 ms; long messages and session lists use browser deferred rendering; incomplete code, math and diagrams are highlighted only after closing or stopping; attachment originals are cached by file ID, URLs still in use are retained, and the idle cache is bounded. This reduces long-chat jank but cannot guarantee smooth performance on every device.
 
 ## Capability matrix
 
@@ -187,6 +202,7 @@ Self-hosted read-aloud supports four request shapes (`openai` / `deepseek` / `en
 - The server listens on `127.0.0.1` by default; write endpoints require the `X-Chat-Local: 1` header.
 - Chats and attachments live in local `data/`, independent of a DeepSeek account or cloud conversation sync. Cloud mode still sends conversation content to the DeepSeek API; only self-hosted mode keeps inference on the model endpoint you configure.
 - When web search, ASR or attachment parsing is enabled, the corresponding content is sent to the provider you chose. Disable anything you do not need.
+- When reading a page through SearXNG in self-hosted mode, loopback, private and reserved addresses (including redirect targets) are rejected, and the body size per page is capped. Tavily and AnySearch extract content on their own servers instead.
 - Self-hosted secrets live only in `.env` or `data/config.json` and are never returned in plaintext. Both locations are excluded by `.gitignore`.
 - The setup write endpoints accept only loopback requests. If the server listens on `0.0.0.0`, the wizard is read-only and you must use `.env`.
 - In cloud mode the API key is stored in browser localStorage, as in the original chat-demo.

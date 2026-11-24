@@ -2,13 +2,23 @@ import asyncio
 import importlib.util
 import json
 import sys
+import tempfile
 import types
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SERVER = ROOT / "server"
+
+
+def load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def usage(input_tokens=0, output_tokens=0):
@@ -42,7 +52,11 @@ def response(input_tokens, output_tokens, tool=None):
 
 class RequestTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="ai-request-test-")
+        self.addCleanup(temp.cleanup)
         config = types.ModuleType("config")
+        config.DATA_DIR = Path(temp.name)
+        config.DEFAULT_SYSTEM = "fixed system"
         config.LLM_BASE_URL = "http://model.invalid"
         config.LLM_MODEL = "test-model"
         config.LLM_MAX_OUTPUT_TOKENS = 512
@@ -56,8 +70,6 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
         memory.MAX_DESCRIPTION = 30
         memory.injection = lambda text: ("", set())
         memory.TOOL_NAMES = {"search_memory", "remember", "edit_memory"}
-        prompts = types.ModuleType("prompts")
-        prompts.active_text = lambda: ""
         providers = types.ModuleType("providers")
         providers.extract = types.ModuleType("providers.extract")
         providers.ocr = types.ModuleType("providers.ocr")
@@ -68,14 +80,32 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
         ledger = types.ModuleType("usage")
         ledger._count = lambda value: max(0, int(value or 0))
         ledger.record = Mock(return_value={"recorded": True})
-        modules = {"config": config, "memory": memory, "prompts": prompts,
-                   "providers": providers, "storage": types.ModuleType("storage"), "usage": ledger}
-        with patch.dict(sys.modules, modules):
-            spec = importlib.util.spec_from_file_location("audit_ai", ROOT / "server" / "ai.py")
-            self.ai = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(self.ai)
+        modules = {"config": config, "memory": memory, "providers": providers, "usage": ledger}
+        isolated = patch.dict(sys.modules, modules)
+        isolated.start()
+        self.addCleanup(isolated.stop)
+        self.storage = load_module("storage", SERVER / "storage.py")
+        sys.modules["storage"] = self.storage
+        self.prompts = load_module("prompts", SERVER / "prompts.py")
+        sys.modules["prompts"] = self.prompts
+        connect = self.storage._conn
+
+        @contextmanager
+        def closing_connection():
+            conn = connect()
+            try:
+                with conn:
+                    yield conn
+            finally:
+                conn.close()
+
+        self.storage._conn = closing_connection
+        self.storage.init()
+        spec = importlib.util.spec_from_file_location("audit_ai", SERVER / "ai.py")
+        self.ai = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.ai)
         self.ai._prepare_messages = AsyncMock(return_value=([{"role": "user", "content": "hello"}], ""))
-        self.ai._system_prompt = lambda *args, **kwargs: "test"
+        self.ai._system_prompt = Mock(wraps=self.ai._system_prompt)
         self.ai._execute_tool = AsyncMock(return_value=(
             {"type": "web_fetch_tool_result", "content": {}, "kind": "read_link"}, "page"
         ))
@@ -84,6 +114,20 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
         self.payloads = []
         self.closed_streams = 0
         self.ledger = ledger
+
+    def add_card(self, card_id, text, active=False):
+        state = self.prompts.load()
+        cards = [card for card in state["cards"] if card["id"] != card_id]
+        cards.append({
+            "id": card_id,
+            "name": card_id,
+            "description": "",
+            "text": text,
+        })
+        self.prompts.save({
+            "active": card_id if active else state["active"],
+            "cards": cards,
+        })
 
     def upstream(self, scripts):
         pending = iter(scripts)
@@ -187,6 +231,83 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ledger.record.call_args.args[0]["usage"], {
             **usage(12, 9), "cache_read_input_tokens": 50, "cache_creation_input_tokens": 8,
         })
+
+    async def test_new_session_first_request_uses_workspace_card_and_ignores_frontend_system(self):
+        self.add_card("global", "GLOBAL CARD TEXT", active=True)
+        self.add_card("workspace", "WORKSPACE CARD TEXT")
+        workspace = self.storage.create_workspace("Project", "workspace")
+        self.upstream([response(10, 3)])
+        await self.consume(
+            session_id="new", workspace_id=workspace["id"], system="FORGED SYSTEM TEXT"
+        )
+        system = self.payloads[0]["system"]
+        self.assertIn("WORKSPACE CARD TEXT", system)
+        self.assertNotIn("GLOBAL CARD TEXT", system)
+        self.assertNotIn("FORGED SYSTEM TEXT", system)
+        self.assertEqual(
+            self.ai._system_prompt.call_args.kwargs["prompt_block"], "WORKSPACE CARD TEXT"
+        )
+
+    async def test_unbound_workspace_falls_back_to_global_active_card(self):
+        self.add_card("global", "GLOBAL CARD TEXT", active=True)
+        self.add_card("workspace", "WORKSPACE CARD TEXT")
+        workspace = self.storage.create_workspace("Project")
+        self.upstream([response(10, 3)])
+        await self.consume(session_id="new", workspace_id=workspace["id"])
+        self.assertIn("GLOBAL CARD TEXT", self.payloads[0]["system"])
+        self.assertNotIn("WORKSPACE CARD TEXT", self.payloads[0]["system"])
+
+    async def test_missing_workspace_card_falls_back_to_global_active_card(self):
+        self.add_card("global", "GLOBAL CARD TEXT", active=True)
+        workspace = self.storage.create_workspace("Project", "global")
+        with self.storage._conn() as conn:
+            conn.execute(
+                "UPDATE workspaces SET card_id='missing' WHERE id=?", (workspace["id"],)
+            )
+        self.upstream([response(10, 3)])
+        await self.consume(session_id="new", workspace_id=workspace["id"])
+        self.assertIn("GLOBAL CARD TEXT", self.payloads[0]["system"])
+
+    async def test_database_workspace_overrides_forged_request_workspace(self):
+        self.add_card("global", "GLOBAL CARD TEXT", active=True)
+        self.add_card("first", "FIRST CARD TEXT")
+        self.add_card("second", "SECOND CARD TEXT")
+        first = self.storage.create_workspace("First", "first")
+        second = self.storage.create_workspace("Second", "second")
+        self.storage.save_session({
+            "id": "session", "title": "", "createdAt": 1, "updatedAt": 1,
+            "workspaceId": first["id"], "messages": [],
+        })
+        self.upstream([response(10, 3)])
+        await self.consume(workspace_id=second["id"], system="FORGED SYSTEM TEXT")
+        system = self.payloads[0]["system"]
+        self.assertIn("FIRST CARD TEXT", system)
+        self.assertNotIn("SECOND CARD TEXT", system)
+        self.assertNotIn("GLOBAL CARD TEXT", system)
+        self.assertNotIn("FORGED SYSTEM TEXT", system)
+        self.assertEqual(
+            self.storage.resolve_session_workspace_id("session", second["id"]), first["id"]
+        )
+
+    async def test_existing_ungrouped_session_ignores_requested_workspace(self):
+        self.add_card("global", "GLOBAL CARD TEXT", active=True)
+        self.add_card("workspace", "WORKSPACE CARD TEXT")
+        workspace = self.storage.create_workspace("Project", "workspace")
+        self.storage.save_session({
+            "id": "session", "title": "", "createdAt": 1, "updatedAt": 1, "messages": [],
+        })
+        self.upstream([response(10, 3)])
+        await self.consume(workspace_id=workspace["id"])
+        self.assertIn("GLOBAL CARD TEXT", self.payloads[0]["system"])
+        self.assertNotIn("WORKSPACE CARD TEXT", self.payloads[0]["system"])
+
+    async def test_new_session_rejects_nonexistent_requested_workspace(self):
+        self.upstream([response(10, 3)])
+        with self.assertRaisesRegex(ValueError, "工作区不存在"):
+            await self.ai.stream_chat({
+                "messages": [], "session_id": "new", "workspace_id": "missing",
+            }, self.request)
+        self.assertEqual(self.payloads, [])
 
 
 if __name__ == "__main__":

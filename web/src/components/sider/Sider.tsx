@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import {
   IconCloseOutline16,
@@ -19,10 +19,17 @@ import {
   useChatStore,
 } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
+import {
+  loadWorkspaces,
+  moveSession,
+  selectWorkspace,
+  useWorkspaceStore,
+} from '../../services/workspaces.js'
 import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
+import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
 import { useDebugPanel } from '../debug/debugPanelState.js'
@@ -35,10 +42,20 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeId)
+  const workspaces = useWorkspaceStore((state) => state.items)
+  const selectedWorkspaceId = useWorkspaceStore((state) => state.selectedId)
+  const workspacesLoading = useWorkspaceStore((state) => state.loading)
+  const workspacesLoaded = useWorkspaceStore((state) => state.loaded)
+  const workspaceError = useWorkspaceStore((state) => state.error)
   const [now, setNow] = useState(Date.now)
   const visibleSessions = useMemo(
-    () => sessions.filter((session) => !session.archived),
-    [sessions]
+    () =>
+      sessions.filter(
+        (session) =>
+          !session.archived &&
+          (selectedWorkspaceId === null || (session.workspaceId ?? null) === selectedWorkspaceId)
+      ),
+    [sessions, selectedWorkspaceId]
   )
   const groups = useMemo(() => groupSessions(visibleSessions, now, t), [visibleSessions, now, t])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
@@ -50,6 +67,21 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const [searchFailed, setSearchFailed] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const nameTaps = useRef<number[]>([])
+  const handleMove = useCallback((sessionId: string, workspaceId: string | null) => {
+    void moveSession(sessionId, workspaceId).catch((error: unknown) => {
+      showToast({
+        key: 'workspaceFailedWithReason',
+        params: { message: error instanceof Error ? error.message : String(error) },
+        type: 'error',
+      })
+    })
+  }, [])
+  const handleDelete = useCallback((target: SessionSummary) => setDeleting(target), [])
+  const handleArchive = useCallback(async (sessionId: string) => {
+    if (!(await setSessionArchived(sessionId, true))) {
+      showToast({ key: 'archiveFailed', type: 'error' })
+    }
+  }, [])
 
   // 隐藏入口：1.5 秒内连点标题 5 次打开调试面板
   const onNameClick = () => {
@@ -204,11 +236,41 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           ) : null}
         </label>
       ) : null}
+      <Select
+        className={styles.workspaceFilter}
+        ariaLabel={t('workspaceFilter')}
+        value={selectedWorkspaceId ?? ''}
+        disabled={workspacesLoading && !workspacesLoaded}
+        options={[
+          { value: '', label: t('workspaceAll') },
+          ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name })),
+        ]}
+        onChange={(value) => selectWorkspace(value || null)}
+      />
+      {workspaceError ? (
+        <div className={clsx(styles.workspaceNotice, styles.workspaceError)} role="alert">
+          <span title={workspaceError}>{t('workspaceLoadFailed')}</span>
+          <button type="button" onClick={() => void loadWorkspaces(true).catch(() => {})}>
+            {t('retry')}
+          </button>
+        </div>
+      ) : workspacesLoading && !workspacesLoaded ? (
+        <div className={styles.workspaceNotice} role="status">
+          {t('workspaceLoading')}
+        </div>
+      ) : null}
       <button
         type="button"
         className={styles.newChat}
+        title={
+          selectedWorkspaceId
+            ? t('newChatInWorkspace', {
+                name: workspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? '',
+              })
+            : t('newChat')
+        }
         onClick={() => {
-          newChat()
+          newChat(selectedWorkspaceId)
           closeMobileSider()
         }}
       >
@@ -268,6 +330,9 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           </div>
         ) : (
           <div className={styles.list}>
+            {groups.length === 0 && selectedWorkspaceId !== null ? (
+              <div className={styles.searchEmpty}>{t('workspaceEmpty')}</div>
+            ) : null}
             {groups.map((group) => (
               <div key={group.key} className={styles.section}>
                 <div className={styles.sectionHeader}>{group.label}</div>
@@ -276,12 +341,9 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
                     key={session.id}
                     session={session}
                     active={session.id === activeId}
-                    onDelete={() => setDeleting(session)}
-                    onArchive={async () => {
-                      if (!(await setSessionArchived(session.id, true))) {
-                        showToast({ key: 'archiveFailed', type: 'error' })
-                      }
-                    }}
+                    onMove={handleMove}
+                    onDelete={handleDelete}
+                    onArchive={handleArchive}
                   />
                 ))}
               </div>

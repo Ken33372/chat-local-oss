@@ -185,7 +185,7 @@ export const DebugPanel = () => {
                 </Card>
                 <Card title="Prompts" ok>
                   <Row label="cards" value={status.prompts.cards} />
-                  <Row label="active" value={status.prompts.active || '—'} />
+                  <Row label="global active" value={status.prompts.active || '—'} />
                   <Row label="chars" value={status.prompts.chars.toLocaleString()} />
                 </Card>
                 <Card title="LLM" ok={status.llm.configured}>

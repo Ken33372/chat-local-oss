@@ -106,6 +106,24 @@ def save(body: dict) -> dict:
     active = str(body.get("active") or "")
     if active and active not in seen_ids:
         raise ValueError("选中的角色卡不存在")
+    current_cards = load()["cards"]
+    removed_ids = {card["id"] for card in current_cards} - seen_ids
+    if removed_ids:
+        # 局部导入避免 storage ↔ prompts 的循环导入。
+        import storage
+
+        bound = storage.workspaces_for_cards(removed_ids)
+        if bound:
+            workspace = bound[0]
+            card_id = workspace["cardId"]
+            card_name = next(
+                (card["name"] for card in current_cards if card["id"] == card_id),
+                card_id,
+            )
+            raise ValueError(
+                f"角色卡「{card_name}」仍被工作区「{workspace['name']}」绑定，"
+                "请先解绑后再删除"
+            )
     state = {"active": active, "cards": cards}
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,12 +150,21 @@ def stats() -> dict:
     return {"cards": len(state["cards"]), "active": name, "chars": chars}
 
 
-def active_text() -> str:
-    state = load()
-    active = state["active"]
-    if not active:
+def _card_text(state: dict, card_id: str) -> str:
+    if not card_id:
         return ""
     for card in state["cards"]:
-        if card["id"] == active:
+        if card["id"] == card_id:
             return card["text"]
     return ""
+
+
+def card_text(card_id: str) -> str:
+    """按 ID 取角色卡正文；ID 不存在时返回空串。"""
+    return _card_text(load(), str(card_id or ""))
+
+
+def active_text() -> str:
+    """全局生效卡的便捷解析。"""
+    state = load()
+    return _card_text(state, state["active"])

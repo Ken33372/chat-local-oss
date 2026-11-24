@@ -8,6 +8,7 @@ import {
   IconThinkOutline14,
 } from '../base/icons.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
+import { useWorkspaceStore } from '../../services/workspaces.js'
 import { useCapabilities } from '../../services/capabilities.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { compressContext, sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
@@ -34,7 +35,8 @@ import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
 import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
-import { contextLimitForMode, formatTokens, getContextUsage } from '../../services/context.js'
+import { contextLimitForMode, formatTokens } from '../../services/context.js'
+import { useContextUsage } from './useContextUsage.js'
 import styles from './ChatInput.module.css'
 
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
@@ -167,7 +169,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。
-    if (!ensureApiKey() || !sendMessage(sessionId)) {
+    if (!ensureApiKey() || !sendMessage(sessionId, useWorkspaceStore.getState().selectedId)) {
       return
     }
     stopReadAloud()
@@ -344,10 +346,15 @@ const ContextBar = ({ sessionId, draft }: { sessionId: string | null; draft: str
   )
   const [busy, setBusy] = useState(false)
   const capabilities = useCapabilities()
+  const used = useContextUsage({
+    session,
+    draft,
+    streaming,
+    applySummary: mode === 'local',
+  })
   if (!session || session.messages.length === 0) {
     return null
   }
-  const used = getContextUsage(session, draft, mode === 'local')
   const limit = contextLimitForMode(mode, capabilities.contextLimit)
   const ratio = used / limit
   const percent = Math.min(999, Math.round(ratio * 100))

@@ -20,7 +20,20 @@ const Html = memo(function Html({ value }: { value: string }) {
   return <span className="ds-markdown-html">{value}</span>
 })
 
-const List = memo(function List({ node, loading }: { node: ListNode; loading: boolean }) {
+type StreamingPositions = {
+  streamingCodeStart: number | null
+  streamingMathStart: number | null
+}
+
+const List = memo(function List({
+  node,
+  loading,
+  streamingCodeStart,
+  streamingMathStart,
+}: {
+  node: ListNode
+  loading: boolean
+} & StreamingPositions) {
   const ListTag = node.ordered ? 'ol' : 'ul'
   return (
     <ListTag start={node.ordered ? node.start || undefined : undefined}>
@@ -34,7 +47,12 @@ const List = memo(function List({ node, loading }: { node: ListNode; loading: bo
               // □ U+25A1 / ☑ U+2611
               <span className="ds-markdown-task-checkbox">{checked ? '☑  ' : '□  '}</span>
             ) : null}
-            <MarkdownBlockContentOrDefinitionContent nodes={child.children} loading={loading} />
+            <MarkdownBlockContentOrDefinitionContent
+              nodes={child.children}
+              loading={loading}
+              streamingCodeStart={streamingCodeStart}
+              streamingMathStart={streamingMathStart}
+            />
           </li>
         )
       })}
@@ -159,20 +177,33 @@ const MarkdownBlockContentOrDefinitionContent = memo(
   function MarkdownBlockContentOrDefinitionContent({
     nodes,
     loading,
+    streamingCodeStart,
+    streamingMathStart,
   }: {
     nodes: Array<BlockContent | DefinitionContent>
     loading: boolean
-  }) {
+  } & StreamingPositions) {
     return nodes.map((node, index) => {
       switch (node.type) {
         case 'math':
-          return <MathBlock key={index} value={node.value} />
+          return (
+            <MathBlock
+              key={index}
+              value={node.value}
+              loading={loading && node.position?.start.offset === streamingMathStart}
+            />
+          )
         case 'thematicBreak':
           return <hr key={index} />
         case 'blockquote':
           return (
             <blockquote key={index}>
-              <MarkdownBlockContentOrDefinitionContent nodes={node.children} loading={loading} />
+              <MarkdownBlockContentOrDefinitionContent
+                nodes={node.children}
+                loading={loading}
+                streamingCodeStart={streamingCodeStart}
+                streamingMathStart={streamingMathStart}
+              />
             </blockquote>
           )
         case 'html':
@@ -197,13 +228,21 @@ const MarkdownBlockContentOrDefinitionContent = memo(
               key={index}
               code={node.value}
               infostring={node.lang || 'text'}
-              loading={loading}
+              loading={loading && node.position?.start.offset === streamingCodeStart}
             />
           )
         case 'table':
           return <Table node={node} key={index} />
         case 'list':
-          return <List key={index} node={node} loading={loading} />
+          return (
+            <List
+              key={index}
+              node={node}
+              loading={loading}
+              streamingCodeStart={streamingCodeStart}
+              streamingMathStart={streamingMathStart}
+            />
+          )
         default:
           // 脚注与定义已在解析时换成段落
           return null
@@ -217,10 +256,14 @@ export const MarkdownAstRenderer = memo(function MarkdownAstRenderer({
   onUpdate,
   className,
   loading = false,
+  streamingCodeStart,
+  streamingMathStart,
 }: {
   ast: Root
   className?: string
   loading?: boolean
+  streamingCodeStart: number | null
+  streamingMathStart: number | null
   /**
    * layoutEffect 之后触发 -> 进行页面滚动
    */
@@ -239,9 +282,11 @@ export const MarkdownAstRenderer = memo(function MarkdownAstRenderer({
         <MarkdownBlockContentOrDefinitionContent
           nodes={ast.children as Array<BlockContent | DefinitionContent>}
           loading={loading}
+          streamingCodeStart={streamingCodeStart}
+          streamingMathStart={streamingMathStart}
         />
       </div>
     ),
-    [className, ast.children, loading]
+    [className, ast.children, loading, streamingCodeStart, streamingMathStart]
   )
 })

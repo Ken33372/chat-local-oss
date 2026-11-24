@@ -1,6 +1,7 @@
-"""SQLite 存储：会话、附件、历史导入暂存、附件 OCR 文本缓存。
+"""SQLite 存储：工作区、会话、附件、历史导入暂存、附件 OCR 文本缓存。
 
-会话整份以 JSON 存储（与前端消息树结构一致），另存标题和时间列用于列表。
+会话整份以 JSON 存储（与前端消息树结构一致），另存标题、时间和工作区列。
+工作区只保存角色卡 ID；卡片改名或改正文后，绑定关系自动跟随。
 附件原件放 data/files，库里只存元数据；删除会话时清理不再被引用的原件。
 """
 from __future__ import annotations
@@ -23,6 +24,21 @@ STAGING_DIR = DATA_DIR / "staging_files"
 
 _lock = threading.RLock()
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+MAX_WORKSPACES = 30
+MAX_WORKSPACE_NAME = 40
+_UNSET = object()
+
+
+class NotFoundError(ValueError):
+    """资源不存在；API 层将其映射为 404。"""
+
+
+class WorkspaceNotFound(NotFoundError):
+    pass
+
+
+class SessionNotFound(NotFoundError):
+    pass
 
 
 def _conn() -> sqlite3.Connection:
@@ -39,12 +55,23 @@ def init() -> None:
     with _lock, _conn() as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS workspaces (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                card_id TEXT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_name_nocase
+                ON workspaces(name COLLATE NOCASE);
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0,
                 archived INTEGER NOT NULL DEFAULT 0,
+                workspace_id TEXT NULL,
                 data TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS files (
@@ -77,10 +104,15 @@ def init() -> None:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"
             )
+        if "workspace_id" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN workspace_id TEXT NULL")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id)"
+        )
 
 
 def _check_id(value: str) -> str:
-    if not _ID_RE.match(value or ""):
+    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
         raise ValueError(f"非法 ID: {value!r}")
     return value
 
@@ -96,12 +128,224 @@ def _file_ids_in(session: dict) -> set[str]:
     return ids
 
 
+# ---------------- 工作区 ----------------
+
+def _workspace_json(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "cardId": row["card_id"],
+        "sortOrder": int(row["sort_order"]),
+        "createdAt": int(row["created_at"]),
+        "updatedAt": int(row["updated_at"]),
+    }
+
+
+def _workspace_name(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("工作区名称必须是字符串")
+    name = " ".join(value.split())
+    if not name:
+        raise ValueError("工作区名称不能为空")
+    if len(name) > MAX_WORKSPACE_NAME:
+        raise ValueError(f"工作区名称最多 {MAX_WORKSPACE_NAME} 字")
+    return name
+
+
+def _workspace_id(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+        raise ValueError("工作区 ID 不合法")
+    return value
+
+
+def _validate_card_id(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError("角色卡 ID 不合法")
+    # 局部导入避免 storage ↔ prompts 的循环导入。
+    import prompts
+
+    if not prompts.card_text(value):
+        raise ValueError("角色卡不存在")
+    return value
+
+
+def _require_workspace(conn: sqlite3.Connection, workspace_id: str) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
+    if row is None:
+        raise WorkspaceNotFound("工作区不存在")
+    return row
+
+
+def _name_exists(conn: sqlite3.Connection, name: str, exclude_id: str = "") -> bool:
+    key = name.casefold()
+    rows = conn.execute("SELECT id, name FROM workspaces").fetchall()
+    return any(row["id"] != exclude_id and str(row["name"]).casefold() == key for row in rows)
+
+
+def validate_workspace_id(value: object) -> str | None:
+    workspace_id = _workspace_id(value)
+    if workspace_id is not None:
+        with _conn() as conn:
+            _require_workspace(conn, workspace_id)
+    return workspace_id
+
+
+def create_workspace(name: object, card_id: object = None) -> dict:
+    normalized_name = _workspace_name(name)
+    normalized_card_id = _validate_card_id(card_id)
+    now = int(time.time() * 1000)
+    workspace_id = uuid.uuid4().hex
+    with _lock, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        count = conn.execute("SELECT COUNT(*) FROM workspaces").fetchone()[0]
+        if count >= MAX_WORKSPACES:
+            raise ValueError(f"工作区最多 {MAX_WORKSPACES} 个")
+        if _name_exists(conn, normalized_name):
+            raise ValueError(f"已有同名工作区：{normalized_name}")
+        try:
+            conn.execute(
+                "INSERT INTO workspaces "
+                "(id, name, card_id, sort_order, created_at, updated_at) "
+                "VALUES (?, ?, ?, 0, ?, ?)",
+                (workspace_id, normalized_name, normalized_card_id, now, now),
+            )
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"已有同名工作区：{normalized_name}") from error
+        return _workspace_json(_require_workspace(conn, workspace_id))
+
+
+def list_workspaces() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM workspaces ORDER BY sort_order ASC, created_at ASC, rowid ASC"
+        ).fetchall()
+    return [_workspace_json(row) for row in rows]
+
+
+def get_workspace(workspace_id: str) -> dict | None:
+    workspace_id = _workspace_id(workspace_id)
+    if workspace_id is None:
+        return None
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)).fetchone()
+    return _workspace_json(row) if row else None
+
+
+def update_workspace(
+    workspace_id: str,
+    *,
+    name: object = _UNSET,
+    card_id: object = _UNSET,
+    sort_order: object = _UNSET,
+) -> dict:
+    workspace_id = _workspace_id(workspace_id)
+    if workspace_id is None:
+        raise WorkspaceNotFound("工作区不存在")
+    updates: dict[str, object] = {}
+    if name is not _UNSET:
+        updates["name"] = _workspace_name(name)
+    if card_id is not _UNSET:
+        updates["card_id"] = _validate_card_id(card_id)
+    if sort_order is not _UNSET:
+        if isinstance(sort_order, bool) or not isinstance(sort_order, int):
+            raise ValueError("sortOrder 必须是整数")
+        updates["sort_order"] = sort_order
+    with _lock, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = _require_workspace(conn, workspace_id)
+        if not updates:
+            return _workspace_json(row)
+        if "name" in updates and _name_exists(conn, str(updates["name"]), workspace_id):
+            raise ValueError(f"已有同名工作区：{updates['name']}")
+        updates["updated_at"] = max(int(time.time() * 1000), int(row["updated_at"]) + 1)
+        assignments = ", ".join(f"{column} = ?" for column in updates)
+        conn.execute(
+            f"UPDATE workspaces SET {assignments} WHERE id = ?",
+            (*updates.values(), workspace_id),
+        )
+        return _workspace_json(_require_workspace(conn, workspace_id))
+
+
+def workspace_card_id(workspace_id: str) -> str | None:
+    workspace_id = _workspace_id(workspace_id)
+    if workspace_id is None:
+        return None
+    with _conn() as conn:
+        return _require_workspace(conn, workspace_id)["card_id"]
+
+
+def workspaces_for_cards(card_ids) -> list[dict]:
+    ids = sorted({str(value) for value in card_ids if value})
+    if not ids:
+        return []
+    placeholders = ", ".join("?" for _ in ids)
+    with _conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM workspaces WHERE card_id IN ({placeholders}) "
+            "ORDER BY sort_order ASC, created_at ASC, rowid ASC",
+            ids,
+        ).fetchall()
+    return [_workspace_json(row) for row in rows]
+
+
+def delete_workspace(workspace_id: str) -> dict:
+    workspace_id = _workspace_id(workspace_id)
+    if workspace_id is None:
+        raise WorkspaceNotFound("工作区不存在")
+    with _lock, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_workspace(conn, workspace_id)
+        rows = conn.execute(
+            "SELECT id, data FROM sessions WHERE workspace_id = ?", (workspace_id,)
+        ).fetchall()
+        for row in rows:
+            session = json.loads(row["data"])
+            session["workspaceId"] = None
+            conn.execute(
+                "UPDATE sessions SET workspace_id = NULL, data = ? WHERE id = ?",
+                (json.dumps(session, ensure_ascii=False, separators=(",", ":")), row["id"]),
+            )
+        conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
+        return {"ok": True, "moved": len(rows)}
+
+
+def _authoritative_workspace_id(
+    conn: sqlite3.Connection, session_id: str, requested_workspace_id: object = None
+) -> str | None:
+    row = conn.execute(
+        "SELECT workspace_id FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    workspace_id = row["workspace_id"] if row is not None else _workspace_id(requested_workspace_id)
+    if workspace_id is not None:
+        _require_workspace(conn, workspace_id)
+    return workspace_id
+
+
+def resolve_session_workspace_id(
+    session_id: str, requested_workspace_id: object = None
+) -> str | None:
+    """已有会话只认数据库；新会话才采用请求里的工作区。"""
+    if session_id:
+        _check_id(session_id)
+    with _conn() as conn:
+        if not session_id:
+            workspace_id = _workspace_id(requested_workspace_id)
+            if workspace_id is not None:
+                _require_workspace(conn, workspace_id)
+            return workspace_id
+        return _authoritative_workspace_id(conn, session_id, requested_workspace_id)
+
+
 # ---------------- 会话 ----------------
 
 def list_sessions() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT id, title, created_at, updated_at, archived FROM sessions "
+            "SELECT id, title, created_at, updated_at, archived, workspace_id FROM sessions "
             "ORDER BY updated_at DESC"
         ).fetchall()
     return [
@@ -111,6 +355,7 @@ def list_sessions() -> list[dict]:
             "createdAt": row["created_at"],
             "updatedAt": row["updated_at"],
             "archived": bool(row["archived"]),
+            "workspaceId": row["workspace_id"],
         }
         for row in rows
     ]
@@ -166,7 +411,7 @@ def search_sessions(query: str, limit: int = 30) -> list[dict]:
     pattern = _search_pattern(needle)
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT id, title, updated_at, data FROM sessions "
+            "SELECT id, title, updated_at, workspace_id, data FROM sessions "
             "WHERE archived = 0 AND (title LIKE ? ESCAPE '\\' OR data LIKE ? ESCAPE '\\') "
             "ORDER BY updated_at DESC LIMIT 200",
             (pattern, pattern),
@@ -210,6 +455,7 @@ def search_sessions(query: str, limit: int = 30) -> list[dict]:
                 "id": str(session.get("id") or row["id"]),
                 "title": title,
                 "updatedAt": _timestamp(row["updated_at"]),
+                "workspaceId": row["workspace_id"],
                 "matchCount": len(matches),
                 "matches": matches[:3],
             }
@@ -220,17 +466,36 @@ def search_sessions(query: str, limit: int = 30) -> list[dict]:
 
 
 def load_session(session_id: str) -> dict | None:
-    with _conn() as conn:
-        row = conn.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    return json.loads(row["data"]) if row else None
+    with _lock, _conn() as conn:
+        row = conn.execute(
+            "SELECT data, workspace_id FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        session = json.loads(row["data"])
+        if session.get("workspaceId") != row["workspace_id"]:
+            session["workspaceId"] = row["workspace_id"]
+            conn.execute(
+                "UPDATE sessions SET data = ? WHERE id = ?",
+                (json.dumps(session, ensure_ascii=False, separators=(",", ":")), session_id),
+            )
+        return session
 
 
 def save_session(session: dict) -> None:
     session_id = _check_id(str(session.get("id", "")))
-    payload = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
     with _lock, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        workspace_id = _authoritative_workspace_id(
+            conn, session_id, session.get("workspaceId")
+        )
+        # 旧前端快照可能仍带着移动前的 workspaceId；统一改回数据库权威值。
+        session["workspaceId"] = workspace_id
+        payload = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
         conn.execute(
-            "INSERT INTO sessions (id, title, created_at, updated_at, data) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO sessions "
+            "(id, title, created_at, updated_at, workspace_id, data) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET title=excluded.title, created_at=excluded.created_at, "
             "updated_at=excluded.updated_at, data=excluded.data",
             (
@@ -238,18 +503,44 @@ def save_session(session: dict) -> None:
                 str(session.get("title") or ""),
                 int(session.get("createdAt") or 0),
                 int(session.get("updatedAt") or 0),
+                workspace_id,
                 payload,
+            ),
+        )
+
+
+def move_session(session_id: str, workspace_id: str | None) -> None:
+    session_id = _check_id(session_id)
+    workspace_id = _workspace_id(workspace_id)
+    with _lock, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            raise SessionNotFound("会话不存在")
+        if workspace_id is not None:
+            _require_workspace(conn, workspace_id)
+        session = json.loads(row["data"])
+        session["workspaceId"] = workspace_id
+        conn.execute(
+            "UPDATE sessions SET workspace_id = ?, data = ? WHERE id = ?",
+            (
+                workspace_id,
+                json.dumps(session, ensure_ascii=False, separators=(",", ":")),
+                session_id,
             ),
         )
 
 
 def rename_session(session_id: str, title: str) -> None:
     with _lock, _conn() as conn:
-        row = conn.execute("SELECT data FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        row = conn.execute(
+            "SELECT data, workspace_id FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
         if not row:
             return
         session = json.loads(row["data"])
         session["title"] = title
+        session["workspaceId"] = row["workspace_id"]
         conn.execute(
             "UPDATE sessions SET title = ?, data = ? WHERE id = ?",
             (title, json.dumps(session, ensure_ascii=False, separators=(",", ":")), session_id),

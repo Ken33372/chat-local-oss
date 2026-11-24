@@ -182,6 +182,44 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.workspaceFilter {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.workspaceNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: -2px 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.workspaceNotice > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.workspaceNotice > button {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspaceError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .newChat {
   position: relative;
   display: flex;

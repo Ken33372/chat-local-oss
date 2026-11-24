@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { memo, useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
+import { loadWorkspaces } from '../services/workspaces.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
@@ -29,6 +30,23 @@ import { loadCapabilities } from '../services/capabilities.js'
 import { SetupWizard } from '../components/setup/SetupWizard.js'
 import styles from './App.module.css'
 
+/** 只在当前会话内部订阅详情与生成状态，流式 delta 不触发 App 根组件重渲染。 */
+const ActiveSessionView = memo(function ActiveSessionView({
+  activeId,
+  siderCollapsed,
+}: {
+  activeId: string
+  siderCollapsed: boolean
+}) {
+  const session = useChatStore((state) =>
+    Object.hasOwn(state.sessionCache, activeId) ? state.sessionCache[activeId] : undefined
+  )
+  const streaming = useChatStore((state) => Object.hasOwn(state.streaming, activeId))
+  return session ? (
+    <SessionView session={session} streaming={streaming} siderCollapsed={siderCollapsed} />
+  ) : null
+})
+
 export const App = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
@@ -40,19 +58,15 @@ export const App = () => {
   const initError = useChatStore((state) => state.initError)
   const saveError = useChatStore((state) => Object.values(state.sessionSaveErrors).some(Boolean))
   const importingHistory = useChatStore((state) => state.importingHistory)
-  const session = useChatStore((state) =>
-    state.activeId !== null && Object.hasOwn(state.sessionCache, state.activeId)
-      ? state.sessionCache[state.activeId]
-      : undefined
+  const activeId = useChatStore((state) => state.activeId)
+  const hasSession = useChatStore(
+    (state) =>
+      state.activeId !== null && Object.hasOwn(state.sessionCache, state.activeId)
   )
   const sessionLoadError = useChatStore((state) =>
     state.activeId === null ? false : state.sessionLoadErrors[state.activeId] === true
   )
   const frameRef = useMobileViewport(isMobile)
-  const streaming = useChatStore((state) =>
-    state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
-  )
-  const activeId = useChatStore((state) => state.activeId)
 
   usePreventPageScroll(isMobile)
 
@@ -77,6 +91,8 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
+    // 失败会写入工作区 store，由侧栏和设置页显示并提供重试。
+    void loadWorkspaces().catch(() => {})
     // 首次打开先在设置里输入 API Key
     ensureApiKey()
   }, [])
@@ -101,7 +117,7 @@ export const App = () => {
           ) : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
-            {!ready || (activeId !== null && !session) ? (
+            {!ready || (activeId !== null && !hasSession) ? (
               <div className={styles.loadingView}>
                 {isMobile ? <MobileHeader /> : null}
                 <div className={styles.loadingState} role="status" aria-live="polite">
@@ -127,12 +143,8 @@ export const App = () => {
                   ) : null}
                 </div>
               </div>
-            ) : session ? (
-              <SessionView
-                session={session}
-                streaming={streaming}
-                siderCollapsed={siderCollapsed}
-              />
+            ) : activeId !== null && hasSession ? (
+              <ActiveSessionView activeId={activeId} siderCollapsed={siderCollapsed} />
             ) : (
               <Welcome />
             )}

@@ -853,6 +853,14 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
         raise UpstreamError("未配置模型接口：请在 .env 填写 LLM_BASE_URL 与 LLM_MODEL")
     raw_messages = body.get("messages") or []
     session = str(body.get("session_id") or "").strip()
+    # 已有会话的工作区以数据库为准；只有新会话才接受请求中的 workspace_id。
+    workspace_id = storage.resolve_session_workspace_id(
+        session, body.get("workspace_id")
+    )
+    card_id = storage.workspace_card_id(workspace_id) if workspace_id else None
+    prompt_block = prompts.card_text(card_id) if card_id else ""
+    if not prompt_block:
+        prompt_block = prompts.active_text()
     force_ocr = str(body.get("image_mode") or "") == "ocr"
     messages, reminder = await _prepare_messages(raw_messages, force_ocr=force_ocr)
     has_image = _has_image(raw_messages)
@@ -919,7 +927,7 @@ async def stream_chat(body: dict, request) -> AsyncGenerator[str, None]:
         "model": config.LLM_MODEL,
         "system": _system_prompt(
             reminder, search_enabled, deep, max_rounds, summary_text,
-            aggregator=search.is_searxng(), prompt_block=prompts.active_text(),
+            aggregator=search.is_searxng(), prompt_block=prompt_block,
         ),
         "thinking": {"type": "enabled" if thinking else "disabled"},
         "max_tokens": config.LLM_MAX_OUTPUT_TOKENS,

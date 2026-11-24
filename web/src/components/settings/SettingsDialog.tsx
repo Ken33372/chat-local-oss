@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  IconBrowseOutline16,
   IconChartOutline16,
   IconDarkOutline16,
   IconDataOutline16,
@@ -60,6 +61,7 @@ import { closeSettings, useSettingsDialog, type SettingsSection } from './settin
 import { MemorySettingsPanel } from './MemorySettingsPanel.js'
 import { PromptsSettingsPanel } from './PromptsSettingsPanel.js'
 import { UsageSettingsPanel } from './UsageSettingsPanel.js'
+import { WorkspaceSettingsPanel } from './WorkspaceSettingsPanel.js'
 import styles from './Settings.module.css'
 
 /**
@@ -79,6 +81,11 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
   },
   { value: 'memory', label: 'settingDialogAsideMemoryOptionLabel', icon: <IconThinkOutline16 /> },
   { value: 'prompts', label: 'settingDialogAsidePromptOptionLabel', icon: <IconEditOutline16 /> },
+  {
+    value: 'workspaces',
+    label: 'settingDialogAsideWorkspaceOptionLabel',
+    icon: <IconBrowseOutline16 />,
+  },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
   { value: 'usage', label: 'settingDialogAsideUsageOptionLabel', icon: <IconChartOutline16 /> },
 ]
@@ -158,6 +165,8 @@ const SettingsContent = () => {
             <MemorySettingsPanel />
           ) : section === 'prompts' ? (
             <PromptsSettingsPanel />
+          ) : section === 'workspaces' ? (
+            <WorkspaceSettingsPanel />
           ) : section === 'usage' ? (
             <UsageSettingsPanel />
           ) : (

@@ -23,6 +23,12 @@ Two details worth knowing:
 
 If you would rather see raw engine output than a reranked top-N, set `RERANK_PROVIDER=none`.
 
+## Web-fetch safety boundaries
+
+- Only the SearXNG path fetches page bodies locally; Tavily and AnySearch perform extraction on their own servers, outside the local network stack.
+- The SearXNG path accepts only `http` / `https` URLs without embedded credentials. Loopback, private and reserved addresses — and hostnames whose DNS answers mix public and private addresses — are rejected. Every redirect is checked again, up to 5 hops.
+- Connections use the validated numeric IP to prevent DNS rebinding, while TLS keeps SNI and certificate verification against the original hostname. Bodies are streamed with a 2 MB per-page cap; redirect bodies are not read, and responses that ignore the requested identity encoding are rejected.
+
 ## Two known sources of dirty data
 
 - With SearXNG, Brave results often arrive as `http:///go/v1/<token>` jump links. The instance has no local `/go` route, so the target is recovered from the base64 tail of that result's thumbnail proxy path; when that decodes to an image rather than a page, the item is dropped instead of being cited with a bad link. A query served entirely by Brave can therefore return fewer items than `SEARCH_RESULTS`.

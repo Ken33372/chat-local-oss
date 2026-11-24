@@ -1,9 +1,16 @@
 import clsx from 'clsx'
 import { memo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
+import {
+  IconDataOutline16,
+  IconDownloadOutline16,
+  IconEditOutline16,
+  IconEllipsisOutline16,
+  IconTrashOutline16,
+} from '../base/icons.js'
 import { renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
+import { useWorkspaceStore } from '../../services/workspaces.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
 import { closeMobileSider } from './mobileSiderState.js'
@@ -12,18 +19,25 @@ import styles from './SessionItem.module.css'
 export const SessionItem = memo(function SessionItem({
   session,
   active,
+  onMove,
   onDelete,
   onArchive,
 }: {
   session: SessionSummary
   active: boolean
-  onDelete: () => void
-  onArchive: () => void
+  onMove: (sessionId: string, workspaceId: string | null) => void
+  onDelete: (session: SessionSummary) => void
+  onArchive: (sessionId: string) => void
 }) {
   const t = useTranslate()
+  const workspaces = useWorkspaceStore((state) => state.items)
   const [editing, setEditing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const displayTitle = session.title || t('untitledChat')
+  const destinations: { id: string | null; label: string }[] = [
+    { id: null, label: t('workspaceUngrouped') },
+    ...workspaces.map((workspace) => ({ id: workspace.id, label: workspace.name })),
+  ]
 
   if (editing) {
     const finish = (title: string) => {
@@ -69,18 +83,26 @@ export const SessionItem = memo(function SessionItem({
               icon: <IconEditOutline16 />,
               onSelect: () => setEditing(true),
             },
+            ...destinations
+              .filter((destination) => destination.id !== (session.workspaceId ?? null))
+              .map((destination) => ({
+                key: `move-${destination.id ?? 'ungrouped'}`,
+                label: t('workspaceMoveOption', { name: destination.label }),
+                icon: <IconDataOutline16 />,
+                onSelect: () => onMove(session.id, destination.id),
+              })),
             {
               key: 'archive',
               label: t('archiveSession'),
               icon: <IconDownloadOutline16 />,
-              onSelect: onArchive,
+              onSelect: () => onArchive(session.id),
             },
             {
               key: 'delete',
               label: t('delete'),
               icon: <IconTrashOutline16 />,
               danger: true,
-              onSelect: onDelete,
+              onSelect: () => onDelete(session),
             },
           ]}
         >

@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import type { Source } from '../../services/chat/view.js'
 import { toMdAst } from '../../services/markdown/parse.js'
+import { getStreamingBlockStarts } from '../../services/markdown/streaming.js'
 import { useScrollToBottom } from '../messages/scrollContext.js'
 import { MarkdownAstRenderer } from './MarkdownAstRenderer.js'
 import { useThrottleMarkdownRender } from './useThrottleMarkdownRender.js'
@@ -28,16 +29,26 @@ export const Markdown = memo(function Markdown({
 }) {
   const scrollToBottom = useScrollToBottom()
   const throttledMarkdown = useThrottleMarkdownRender(content, loading)
-  const ast = useMemo(
-    () => (throttledMarkdown ? toMdAst(throttledMarkdown, { sources, disableLink }) : null),
-    [throttledMarkdown, sources, disableLink]
-  )
-  return ast ? (
+  const parsed = useMemo(() => {
+    if (!throttledMarkdown) {
+      return null
+    }
+    const ast = toMdAst(throttledMarkdown, { sources, disableLink })
+    return {
+      ast,
+      streamingStarts: loading
+        ? getStreamingBlockStarts(ast, throttledMarkdown)
+        : { code: null, math: null },
+    }
+  }, [throttledMarkdown, sources, disableLink, loading])
+  return parsed ? (
     <MarkdownAstRenderer
       key={cacheKey}
       className={className}
-      ast={ast}
+      ast={parsed.ast}
       loading={loading}
+      streamingCodeStart={parsed.streamingStarts.code}
+      streamingMathStart={parsed.streamingStarts.math}
       onUpdate={scrollToBottom}
     />
   ) : null

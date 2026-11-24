@@ -1,9 +1,9 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
-import { memo, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconEditOutline16 } from '../base/icons.js'
-import { editMessage, retryUpload } from '../../services/chat/store.js'
+import { editMessage, retryUpload as retryMessageUpload } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { UserMessage as UserMessageType } from '../../services/chat/types.js'
 import { Button } from '../base/Button.js'
@@ -44,6 +44,11 @@ export const UserMessage = memo(function UserMessage({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isMobile = useIsMobile()
   const canSend = !busy && (draft.trim() !== '' || message.files.length > 0)
+  const handleRetryUpload = useCallback(() => {
+    if (retryUploadId !== null) {
+      retryMessageUpload(sessionId, retryUploadId)
+    }
+  }, [sessionId, retryUploadId])
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -73,7 +78,7 @@ export const UserMessage = memo(function UserMessage({
             <MessageFile
               key={file.id}
               file={file}
-              onRetry={retryUploadId ? () => retryUpload(sessionId, retryUploadId) : null}
+              onRetry={retryUploadId ? handleRetryUpload : null}
             />
           ))}
         </div>

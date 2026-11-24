@@ -149,7 +149,12 @@ const hasFile = (body: CreateMessageRequest) =>
 /** 本机后端只接受它需要的字段；DeepSeek 私有字段（safety_check、title、latest_reminder）由后端处理 */
 export type StreamSettings = Pick<ReturnType<typeof useSettings.getState>, 'mode' | 'maxToolRounds'>
 
-const toLocalBody = (body: CreateMessageRequest, settings: StreamSettings, sessionId?: string) => ({
+const toLocalBody = (
+  body: CreateMessageRequest,
+  settings: StreamSettings,
+  sessionId?: string,
+  workspaceId: string | null = null
+) => ({
   model: body.model,
   system: body.system,
   messages: body.messages,
@@ -159,6 +164,8 @@ const toLocalBody = (body: CreateMessageRequest, settings: StreamSettings, sessi
   ...(body.context_summary ? { context_summary: body.context_summary } : {}),
   // 后端用它填 {session} 请求头，供要求稳定会话 ID 的服务做路由与缓存
   ...(sessionId ? { session_id: sessionId } : {}),
+  // 仅本地请求携带；null 明确表示未分组，不会泄漏到云端请求体。
+  workspace_id: workspaceId,
 })
 
 const consumeMessageStream = async function* (
@@ -205,7 +212,8 @@ const streamLocalMessage = async function* (
   body: CreateMessageRequest,
   signal: AbortSignal,
   settings: StreamSettings,
-  sessionId?: string
+  sessionId?: string,
+  workspaceId: string | null = null
 ): AsyncGenerator<MessageStreamEvent> {
   const run = async function* (imageMode?: 'ocr'): AsyncGenerator<MessageStreamEvent> {
     const response = await request('/api/ai/messages', {
@@ -216,7 +224,7 @@ const streamLocalMessage = async function* (
         Accept: 'text/event-stream',
       },
       body: JSON.stringify({
-        ...toLocalBody(body, settings, sessionId),
+        ...toLocalBody(body, settings, sessionId, workspaceId),
         ...(imageMode ? { image_mode: imageMode } : {}),
       }),
       signal,
@@ -247,10 +255,11 @@ export async function* streamMessage(
   body: CreateMessageRequest,
   signal: AbortSignal,
   sessionId?: string,
-  settings: StreamSettings = useSettings.getState()
+  settings: StreamSettings = useSettings.getState(),
+  workspaceId: string | null = null
 ): AsyncGenerator<MessageStreamEvent> {
   if (settings.mode === 'local') {
-    yield* streamLocalMessage(body, signal, settings, sessionId)
+    yield* streamLocalMessage(body, signal, settings, sessionId, workspaceId)
     return
   }
   const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {

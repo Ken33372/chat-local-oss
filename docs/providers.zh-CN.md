@@ -110,6 +110,12 @@ TTS_PROVIDER=deepseek
 
 想覆盖任何一项，直接写对应的环境变量即可（环境变量优先于这把 key 带来的默认值）。
 
+## 工作区与角色卡
+
+工作区在自建后端模式和云端模式下都能整理对话。自建后端模式还可在「设置 → 工作区」中给每个工作区绑定一张角色卡。后端按会话实际所属的工作区选提示词，优先级为「工作区卡 → 全局卡」；新对话使用创建时选中的工作区。删除工作区只会把会话移入未分组，不删除聊天。
+
+ZIP 历史导出只包含会话和附件，不包含工作区定义与角色卡绑定；导入的会话归入未分组。
+
 ## 对话模型的两条协议
 
 `LLM_PROVIDER` 决定后端向上游发哪种请求。两种协议下，联网搜索、读网页、引用角标、思考过程、附件（图片/OCR）、自动标题、上下文压缩都走同一套逻辑，不需要另配。
@@ -122,9 +128,9 @@ TTS_PROVIDER=deepseek
 OpenAI 这一路对齐的细节：
 
 - **思考过程**：认 `reasoning_content`（DeepSeek / vLLM）和 `reasoning` 两种字段，显示为思考块；模型不返回思考就不显示。
-- **工具调用**：`tools` 转成 function calling；模型返回的 `tool_calls` 由本机执行 web_search / read_url，结果按 `role: tool` 回传，搜索卡片和引用编号照常显示。
+- **工具调用**：`tools` 转成 function calling；模型返回的 `tool_calls` 由本机执行 web_search / read_url，结果按 `role: tool` 回传，搜索卡片和引用编号照常显示。配好搜索后 read_url 始终声明，搜索开关只撤掉 web_search；find_in_page 还需开启深度思考。模型误调未声明的工具时只回一条“未执行”的 tool_result，回复继续。
 - **用量**：`prompt_tokens` / `completion_tokens` 计入上下文提示；`prompt_tokens_details.cached_tokens` 记为缓存命中。
-- **图片**：base64 图片转成 `image_url`（data URL）。上游模型要支持视觉；不支持时把 `CHAT_LOCAL_IMAGE_MODE` 设为 `auto`，会回退 OCR。
+- **图片**：base64 图片转成 `image_url`（data URL）。上游模型要支持视觉；默认的 `CHAT_LOCAL_IMAGE_PARSER=vision` 在模型拒绝图片时会自动改用 OCR 重试一次（需配好 OCR 凭据），也可以直接选 `openai` 或 `deepseek`。
 - **兼容兜底**：服务端不认 `stream_options` 时自动去掉重试一次；忽略 `stream` 直接回 JSON 的服务也能用。
 - **自定义请求头**：`LLM_HEADERS` 填 JSON 对象，追加或覆盖请求头（默认 `User-Agent` 是 python-httpx，可在这里改成自己的身份）。两种协议都生效，标题和压缩请求也带上。可用占位符：
 

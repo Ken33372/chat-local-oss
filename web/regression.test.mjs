@@ -23,7 +23,7 @@ const usage = (input = 10, output = 2) => ({
   cache_read_input_tokens: 0, output_tokens: output,
 })
 const session = (id = 's') => ({
-  id, title: 'before', createdAt: 1, updatedAt: 1,
+  id, title: 'before', createdAt: 1, updatedAt: 1, workspaceId: null,
   messages: [], rootMessageId: null,
 })
 function memoryStorage() {
@@ -152,6 +152,36 @@ async function chat(options = {}) {
   return { ...env, seed, disk, writes, order, records, requests, setSettings: (next) => { settings = { ...settings, ...next } } }
 }
 
+async function workspaceStore(handler, waitForSessionSave = async () => {}) {
+  const cached = { ...session('s'), workspaceId: 'w1' }
+  const chatStore = createStore(() => ({
+    sessions: [cached, { ...session('s2'), workspaceId: 'w2', archived: true }],
+    sessionCache: { s: cached },
+    pendingWorkspaceId: null,
+  }))
+  const calls = []
+  const env = await sandbox('src/services/workspaces.ts', {
+    zustand: { create: createStore },
+    '/services/api/client.ts': {
+      request: async (url, init) => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          headers: init.headers,
+          body: init.body === undefined ? undefined : JSON.parse(init.body),
+        })
+        return handler(url, init)
+      },
+    },
+    '/chat/store.ts': { useChatStore: chatStore, waitForSessionSave },
+  })
+  return { ...env, calls, chatStore }
+}
+
+const workspace = (id, sortOrder) => ({
+  id, name: id, cardId: null, sortOrder, createdAt: sortOrder, updatedAt: sortOrder,
+})
+
 function continuedSession(files = []) {
   const s = session()
   s.messages = [
@@ -162,6 +192,221 @@ function continuedSession(files = []) {
   delete s.rootMessageId
   return s
 }
+
+test('session summaries preserve workspace membership and legacy records default to ungrouped', async () => {
+  const env = await sandbox('src/services/chat/types.ts')
+  const current = session()
+  current.workspaceId = 'workspace-a'
+  assert.equal(env.api.toSessionSummary(current).workspaceId, 'workspace-a')
+  assert.equal(Object.hasOwn(env.api.toSessionSummary(current), 'messages'), false)
+  const legacy = session()
+  delete legacy.workspaceId
+  assert.equal(env.api.toSessionSummary(legacy).workspaceId, null)
+})
+
+test('session normalization adds missing workspace membership without rewriting current records', async () => {
+  const env = await sandbox('src/services/chat/branches.ts')
+  const current = session()
+  assert.equal(env.api.normalizeSession(current), current)
+  const legacy = session()
+  delete legacy.workspaceId
+  const normalized = env.api.normalizeSession(legacy)
+  assert.equal(normalized.workspaceId, null)
+  assert.notEqual(normalized, legacy)
+  assert.equal(env.api.normalizeSession(normalized), normalized)
+  delete legacy.rootMessageId
+  assert.equal(env.api.normalizeSession(legacy).rootMessageId, null)
+})
+
+test('new chats consume the selected workspace and explicit ungrouped overrides it', async () => {
+  const env = await chat({ draft: { text: 'mock', files: [] } })
+  env.setSettings({ mode: 'local' })
+  env.api.useChatStore.setState({ ready: true })
+
+  env.api.newChat('workspace-a')
+  assert.equal(env.api.sendMessage(null), true)
+  const firstId = env.api.useChatStore.getState().activeId
+  assert.equal(env.api.useChatStore.getState().sessionCache[firstId].workspaceId, 'workspace-a')
+  assert.equal(env.api.useChatStore.getState().sessions[0].workspaceId, 'workspace-a')
+
+  env.api.newChat('workspace-a')
+  assert.equal(env.api.sendMessage(null, null), true)
+  const secondId = env.api.useChatStore.getState().activeId
+  assert.equal(env.api.useChatStore.getState().sessionCache[secondId].workspaceId, null)
+
+  env.api.newChat()
+  assert.equal(env.api.sendMessage(null), true)
+  const thirdId = env.api.useChatStore.getState().activeId
+  assert.equal(env.api.useChatStore.getState().sessionCache[thirdId].workspaceId, null)
+
+  await tick()
+  assert.deepEqual(env.requests.map((request) => request[5]), ['workspace-a', null, null])
+  assert.equal(env.requests.some((request) => Object.hasOwn(request[1], 'workspaceId')), false)
+  // Each send persists more than once (initial, prepared, settled); every saved
+  // snapshot must retain the same membership for that session.
+  assert.deepEqual(
+    Object.fromEntries(env.writes.map((value) => [value.id, value.workspaceId])),
+    { [firstId]: 'workspace-a', [secondId]: null, [thirdId]: null }
+  )
+})
+
+test('history imports create ungrouped sessions', async () => {
+  const env = await sandbox('src/services/chat/history/toLocal.ts', {
+    '/i18n/index.ts': { translate: (key) => key },
+  })
+  const imported = env.api.toLocalSession({
+    id: 'imported', title: null, pinned: false, current_message_id: 0,
+    inserted_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', messages: [],
+  })
+  assert.equal(imported.session.workspaceId, null)
+  assert.equal(imported.session.rootMessageId, null)
+})
+
+test('workspace store loads, creates, renames, binds, moves and deletes with server confirmation', async () => {
+  const disk = [workspace('w2', 2), workspace('w1', 1)]
+  const env = await workspaceStore(async (url, init) => {
+    const method = init.method ?? 'GET'
+    if (url === '/api/chat/workspaces' && method === 'GET') return ok({ workspaces: disk })
+    if (url === '/api/chat/workspaces' && method === 'POST') {
+      const body = JSON.parse(init.body)
+      const created = { ...workspace('w3', 3), name: body.name, cardId: body.cardId ?? null }
+      disk.push(created)
+      return ok(created)
+    }
+    const match = /^\/api\/chat\/workspaces\/([^/]+)$/.exec(url)
+    if (match && method === 'PATCH') {
+      const current = disk.find((item) => item.id === match[1])
+      Object.assign(current, JSON.parse(init.body))
+      return ok({ workspace: current })
+    }
+    if (match && method === 'DELETE') {
+      const moved = 2
+      disk.splice(disk.findIndex((item) => item.id === match[1]), 1)
+      return ok({ ok: true, moved })
+    }
+    if (url === '/api/chat/sessions/s/workspace' && method === 'PATCH') {
+      assert.deepEqual(JSON.parse(init.body), { workspaceId: 'w2' })
+      return new Response(null, { status: 200 })
+    }
+    throw Error(`Unexpected workspace route ${method} ${url}`)
+  })
+
+  await env.api.loadWorkspaces()
+  assert.deepEqual(plain(env.api.useWorkspaceStore.getState().items.map((item) => item.id)), ['w1', 'w2'])
+  assert.equal(env.api.useWorkspaceStore.getState().selectedId, null)
+  assert.equal(env.calls[0].headers['X-Chat-Local'], '1')
+
+  const created = await env.api.createWorkspace('  New  ', 'card-a')
+  assert.equal(created.name, 'New')
+  assert.equal(env.api.useWorkspaceStore.getState().selectedId, 'w3')
+  assert.deepEqual(env.calls[1].body, { name: 'New', cardId: 'card-a' })
+
+  await env.api.renameWorkspace('w3', 'Renamed')
+  assert.equal(env.api.useWorkspaceStore.getState().items.find((item) => item.id === 'w3').name, 'Renamed')
+  await env.api.setWorkspaceCard('w3', null)
+  assert.equal(env.api.useWorkspaceStore.getState().items.find((item) => item.id === 'w3').cardId, null)
+  assert.deepEqual(env.calls[3].body, { cardId: null })
+
+  await env.api.moveSession('s', 'w2')
+  assert.equal(env.chatStore.getState().sessions[0].workspaceId, 'w2')
+  assert.equal(env.chatStore.getState().sessionCache.s.workspaceId, 'w2')
+
+  env.api.selectWorkspace('w2')
+  env.chatStore.setState({ pendingWorkspaceId: 'w2' })
+  assert.deepEqual(plain(await env.api.deleteWorkspace('w2')), { ok: true, moved: 2 })
+  const workspaces = env.api.useWorkspaceStore.getState()
+  assert.equal(workspaces.items.some((item) => item.id === 'w2'), false)
+  assert.equal(workspaces.selectedId, null)
+  assert.equal(env.chatStore.getState().pendingWorkspaceId, null)
+  assert.deepEqual(plain(env.chatStore.getState().sessions.map((item) => item.workspaceId)), [null, null])
+  assert.equal(env.chatStore.getState().sessionCache.s.workspaceId, null)
+  assert.equal(env.calls.some((call) => call.method === 'PUT'), false)
+})
+
+test('workspace moves wait for a new session save and serialize overlapping requests', async () => {
+  const save = deferred()
+  const secondMove = deferred()
+  const moves = []
+  let saveWaits = 0
+  const env = await workspaceStore(async (url, init) => {
+    if (url === '/api/chat/sessions/s/workspace' && init.method === 'PATCH') {
+      const workspaceId = JSON.parse(init.body).workspaceId
+      moves.push(workspaceId)
+      if (moves.length === 1) {
+        throw Object.assign(new Error('session not saved'), { status: 404 })
+      }
+      if (moves.length === 2) {
+        return ok()
+      }
+      await secondMove.promise
+      return ok()
+    }
+    throw Error(`Unexpected route ${init.method} ${url}`)
+  }, async () => {
+    saveWaits += 1
+    await save.promise
+  })
+
+  const first = env.api.moveSession('s', 'w2')
+  const second = env.api.moveSession('s', null)
+  await tick()
+  assert.deepEqual(moves, ['w2'])
+  assert.equal(saveWaits, 1)
+
+  save.resolve()
+  await first
+  assert.deepEqual(moves.slice(0, 2), ['w2', 'w2'])
+  assert.equal(env.chatStore.getState().sessionCache.s.workspaceId, 'w2')
+
+  secondMove.resolve()
+  await second
+  assert.deepEqual(moves, ['w2', 'w2', null])
+  assert.equal(env.chatStore.getState().sessions[0].workspaceId, null)
+  assert.equal(env.chatStore.getState().sessionCache.s.workspaceId, null)
+})
+
+test('workspace store resets stale selection and exposes recoverable load and mutation errors', async () => {
+  let failLoad = true
+  let failCreate = true
+  const disk = [workspace('w1', 1)]
+  const env = await workspaceStore(async (url, init) => {
+    const method = init.method ?? 'GET'
+    if (method === 'GET') {
+      if (failLoad) throw Error('mock load failed')
+      return ok({ workspaces: disk })
+    }
+    if (method === 'POST') {
+      if (failCreate) throw Error('mock create failed')
+      return ok(workspace('w2', 2))
+    }
+    throw Error(`Unexpected route ${method} ${url}`)
+  })
+
+  await assert.rejects(env.api.loadWorkspaces(), /mock load failed/)
+  let state = env.api.useWorkspaceStore.getState()
+  assert.equal(state.error, 'mock load failed')
+  assert.equal(state.loading, false)
+  assert.equal(state.loaded, false)
+
+  failLoad = false
+  await env.api.loadWorkspaces(true)
+  env.api.selectWorkspace('w1')
+  disk.splice(0, 1)
+  await env.api.loadWorkspaces(true)
+  state = env.api.useWorkspaceStore.getState()
+  assert.equal(state.selectedId, null)
+  assert.equal(state.error, null)
+
+  await assert.rejects(env.api.createWorkspace('X'), /mock create failed/)
+  state = env.api.useWorkspaceStore.getState()
+  assert.equal(state.error, 'mock create failed')
+  assert.equal(state.items.length, 0)
+
+  failCreate = false
+  await env.api.createWorkspace('X')
+  assert.equal(env.api.useWorkspaceStore.getState().error, null)
+  assert.equal(env.api.useWorkspaceStore.getState().items.length, 1)
+})
 
 test('queued attachments keep their selected mode after a settings change', async () => {
   let mode = 'local'
@@ -208,6 +453,26 @@ test('same-session saves serialize and coalesce to latest; idle waits for PUT', 
   latest.resolve()
   await wait
   assert.equal(env.disk.get('s').title, 'three')
+})
+
+test('workspace save wait drains the current PUT and reports persistence failure', async () => {
+  for (const fail of [false, true]) {
+    const saving = deferred()
+    const env = await chat({ write: async () => { await saving.promise; if (fail) throw Error('mock disk full') } })
+    env.seed()
+    env.api.renameSession('s', 'unsaved')
+    await tick()
+    let settled = false
+    const waiting = env.api.waitForSessionSave('s').finally(() => { settled = true })
+    const outcome = fail
+      ? assert.rejects(waiting, /尚未保存/)
+      : waiting
+    await tick()
+    assert.equal(settled, false)
+    saving.resolve()
+    await outcome
+    assert.equal(settled, true)
+  }
 })
 
 test('archive waits for real persistence; failed save stays cached and retry succeeds', async () => {
@@ -446,14 +711,215 @@ test('real client routes from explicit snapshot, not live mode, with snapshot to
     return new Response('data: {"type":"message_stop"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
   } })
   const body = { model: 'deepseek-flash', messages: [], system: '', thinking: { type: 'disabled' }, tools: [] }
-  const consume = async (snapshot) => { for await (const event of env.api.streamMessage('mock', body, new AbortController().signal, 's', snapshot)) assert.equal(event.type, 'message_stop') }
-  await consume({ mode: 'cloud', maxToolRounds: 2 })
+  const consume = async (snapshot, workspaceId) => { for await (const event of env.api.streamMessage('mock', body, new AbortController().signal, 's', snapshot, workspaceId)) assert.equal(event.type, 'message_stop') }
+  await consume({ mode: 'cloud', maxToolRounds: 2 }, 'cloud-workspace')
   assert.equal(calls[0].url, 'https://mock.invalid/anthropic/v1/messages')
+  assert.equal(Object.hasOwn(calls[0].body, 'workspace_id'), false)
   mode = 'cloud'
-  await consume({ mode: 'local', maxToolRounds: 2 })
+  await consume({ mode: 'local', maxToolRounds: 2 }, 'local-workspace')
   assert.equal(calls[1].url, '/api/ai/messages')
   assert.equal(calls[1].body.max_tool_rounds, 2)
   assert.equal(calls[1].body.session_id, 's')
+  assert.equal(calls[1].body.workspace_id, 'local-workspace')
+  await consume({ mode: 'local', maxToolRounds: 2 })
+  assert.equal(calls[2].body.workspace_id, null)
+})
+
+test('message version props stay referentially stable while only the streaming reply changes', async () => {
+  const env = await sandbox('src/services/chat/branches.ts')
+  const current = session()
+  current.messages = [
+    { id: 'q', role: 'user', content: 'question', files: [], createdAt: 1 },
+    { id: 'a', role: 'assistant', status: 'streaming', createdAt: 1, blocks: [{ type: 'text', text: 'one' }] },
+  ]
+  const previous = env.api.buildMessageVersions(current, new Map())
+  const next = {
+    ...current,
+    messages: [current.messages[0], { ...current.messages[1], blocks: [{ type: 'text', text: 'two' }] }],
+  }
+  const versions = env.api.buildMessageVersions(next, previous)
+  assert.equal(versions, previous)
+  assert.equal(versions.get('q'), previous.get('q'))
+  assert.equal(versions.get('a'), previous.get('a'))
+})
+
+test('context usage throttle coalesces streaming deltas and flushes draft, stop and session changes', async () => {
+  let now = 0, timerId = 0
+  const timers = new Map(), estimates = []
+  const env = await sandbox('src/services/contextUsageThrottle.ts', {}, {
+    performance: { now: () => now },
+    setTimeout: (callback, delay) => {
+      const id = ++timerId
+      timers.set(id, { at: now + delay, callback })
+      return id
+    },
+    clearTimeout: (id) => timers.delete(id),
+  })
+  const throttle = env.api.createContextUsageThrottle(
+    (input) => input.session.updatedAt + input.draft.length,
+    {
+      interval: 250,
+      now: () => now,
+      setTimer: (callback, delay) => {
+        const id = ++timerId
+        timers.set(id, { at: now + delay, callback })
+        return id
+      },
+      clearTimer: (id) => timers.delete(id),
+      onChange: (value) => estimates.push(value.used),
+    }
+  )
+  const runDue = () => {
+    const due = [...timers].filter(([, timer]) => timer.at <= now).sort((a, b) => a[1].at - b[1].at)
+    for (const [id, timer] of due) {
+      timers.delete(id)
+      timer.callback()
+    }
+  }
+  let current = { ...session('s'), updatedAt: 0 }
+  throttle.update({ session: current, draft: '', streaming: true, applySummary: true })
+  for (now = 10; now <= 1000; now += 10) {
+    current = { ...current, updatedAt: now }
+    throttle.update({ session: current, draft: '', streaming: true, applySummary: true })
+    runDue()
+  }
+  assert.deepEqual(estimates, [0, 250, 500, 750, 1000])
+
+  now = 1010
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: '', streaming: true, applySummary: true })
+  assert.equal(timers.size, 1)
+  now = 1020
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: '', streaming: false, applySummary: true })
+  assert.equal(timers.size, 0)
+  assert.equal(estimates.at(-1), 1020)
+
+  now = 1030
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: 'draft', streaming: false, applySummary: true })
+  assert.equal(estimates.at(-1), 1035)
+  now = 1040
+  current = { ...session('next'), updatedAt: now }
+  throttle.update({ session: current, draft: 'draft', streaming: true, applySummary: true })
+  assert.equal(estimates.at(-1), 1045)
+  now = 1050
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: 'new draft', streaming: true, applySummary: true })
+  assert.equal(estimates.at(-1), 1059)
+
+  now = 1060
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: 'new draft', streaming: true, applySummary: true })
+  assert.equal(throttle.flush().used, 1069)
+  assert.equal(timers.size, 0)
+  now = 1070
+  current = { ...current, updatedAt: now }
+  throttle.update({ session: current, draft: 'new draft', streaming: true, applySummary: true })
+  throttle.cancel()
+  assert.equal(timers.size, 0)
+  assert.deepEqual(estimates, [0, 250, 500, 750, 1000, 1020, 1035, 1045, 1059, 1069])
+})
+
+test('attachment cache deduplicates ids, retains mounted URLs and bounds idle LRU entries', async () => {
+  const loads = [], created = [], revoked = []
+  const env = await sandbox('src/services/attachmentCache.ts', {
+    '/chat/db.ts': { loadFile: () => { throw Error('Unexpected default loader') } },
+  })
+  const cache = env.api.createAttachmentCache({
+    limit: 2,
+    load: (id) => {
+      const task = deferred()
+      loads.push({ id, ...task })
+      return task.promise
+    },
+    createObjectURL: () => { const url = `blob:${created.length}`; created.push(url); return url },
+    revokeObjectURL: (url) => revoked.push(url),
+  })
+  const firstPromise = cache.acquire('a')
+  const duplicatePromise = cache.acquire('a')
+  assert.equal(loads.length, 1)
+  loads[0].resolve(new File(['same'], 'same-name.txt'))
+  const first = await firstPromise
+  const duplicate = await duplicatePromise
+  assert.equal(first.url, 'blob:0')
+  assert.equal(duplicate.url, first.url)
+  first.release()
+  first.release()
+  assert.deepEqual(revoked, [])
+  duplicate.release()
+
+  const secondPromise = cache.acquire('b')
+  loads[1].resolve(new Blob(['second']))
+  const second = await secondPromise
+  second.release()
+
+  const retainedPromise = cache.acquire('a')
+  const retained = await retainedPromise
+  assert.equal(loads.filter((item) => item.id === 'a').length, 1)
+
+  for (const [id, text] of [['c', 'third'], ['d', 'fourth']]) {
+    const pending = cache.acquire(id)
+    loads.at(-1).resolve(new Blob([text]))
+    const handle = await pending
+    handle.release()
+  }
+  assert.deepEqual(revoked, ['blob:1'])
+  assert.equal(retained.url, 'blob:0')
+
+  retained.release()
+  assert.deepEqual(revoked, ['blob:1', 'blob:2'])
+  assert.deepEqual(created, ['blob:0', 'blob:1', 'blob:2', 'blob:3'])
+
+  const missingPromise = cache.acquire('missing')
+  loads.at(-1).resolve(undefined)
+  const missing = await missingPromise
+  assert.equal(missing.url, null)
+  missing.release()
+  const missingAgainPromise = cache.acquire('missing')
+  loads.at(-1).resolve(new Blob(['uploaded later']))
+  const missingAgain = await missingAgainPromise
+  assert.equal(missingAgain.url, 'blob:4')
+  missingAgain.release()
+  assert.equal(loads.filter((item) => item.id === 'missing').length, 2)
+
+  const failedPromise = cache.acquire('retry')
+  loads.at(-1).reject(Error('mock read failed'))
+  await assert.rejects(failedPromise, /mock read failed/)
+  const retriedPromise = cache.acquire('retry')
+  loads.at(-1).resolve(new Blob(['retry']))
+  const retried = await retriedPromise
+  assert.equal(retried.url, 'blob:5')
+  retried.release()
+})
+
+test('streaming block detection distinguishes incomplete fences and display math from closed blocks', async () => {
+  const env = await sandbox('src/services/markdown/streaming.ts')
+  const starts = env.api.getStreamingBlockStarts
+  const position = (start, input) => ({ start: { offset: start }, end: { offset: input.length } })
+  const node = (type, start, input, children) => ({
+    type, position: position(start, input), ...(children ? { children } : {}),
+  })
+  const root = (children) => ({ type: 'root', children })
+
+  let input = '```js\nconst x = 1'
+  assert.equal(starts(root([node('code', 0, input)]), input).code, 0)
+  input += '\n```'
+  assert.equal(starts(root([node('code', 0, input)]), input).code, null)
+  input = '~~~\nx\n~~'
+  assert.equal(starts(root([node('code', 0, input)]), input).code, 0)
+  input = '~~~\nx\n~~~~'
+  assert.equal(starts(root([node('code', 0, input)]), input).code, null)
+
+  input = '$$\n'
+  assert.equal(starts(root([node('math', 0, input)]), input).math, 0)
+  input = 'before\n\n$$\nx'
+  assert.equal(starts(root([node('math', 8, input)]), input).math, 8)
+  input += '\n$$'
+  assert.equal(starts(root([node('math', 8, input)]), input).math, null)
+  input = 'prefix\n```\nx'
+  const nested = root([node('list', 0, input, [node('code', 7, input)])])
+  assert.equal(starts(nested, input).code, 7)
 })
 
 // Hook harness executes actual component logic; JSX rendering is deliberately excluded.
@@ -484,6 +950,54 @@ function hooks() {
     },
   }
 }
+
+test('Markdown throttle uses the latest streaming text and returns the complete final render immediately', async () => {
+  const h = hooks()
+  let now = 0, timerId = 0
+  const timers = new Map()
+  const env = await sandbox('src/components/markdown/useThrottleMarkdownRender.ts', {
+    react: h.react,
+  }, {
+    performance: { now: () => now },
+    setTimeout: (callback, delay) => {
+      const id = ++timerId
+      timers.set(id, { at: now + delay, callback })
+      return id
+    },
+    clearTimeout: (id) => timers.delete(id),
+  })
+  const render = (content, loading) => {
+    h.begin()
+    const output = env.api.useThrottleMarkdownRender(content, loading)
+    h.runEffects()
+    return output
+  }
+  const runDue = () => {
+    const due = [...timers].filter(([, timer]) => timer.at <= now)
+    for (const [id, timer] of due) {
+      timers.delete(id)
+      timer.callback()
+    }
+  }
+
+  assert.equal(render('a', true), 'a')
+  now = 10
+  assert.equal(render('ab', true), 'a')
+  now = 120
+  runDue()
+  assert.equal(render('ab', true), 'ab')
+  now = 130
+  assert.equal(render('abc', true), 'ab')
+  now = 200
+  assert.equal(render('abcd', true), 'ab')
+  now = 240
+  runDue()
+  assert.equal(render('abcd', true), 'abcd')
+  now = 241
+  assert.equal(render('final\n```', false), 'final\n```')
+  assert.equal(timers.size, 0)
+})
+
 const panelStubs = (h) => ({
   react: h.react,
   clsx: { default: () => '' },

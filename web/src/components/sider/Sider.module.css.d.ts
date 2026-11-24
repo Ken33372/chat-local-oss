@@ -16,6 +16,9 @@ declare const styles: {
   readonly "searchSnippetRole": string;
   readonly "searchMore": string;
   readonly "searchEmpty": string;
+  readonly "workspaceFilter": string;
+  readonly "workspaceNotice": string;
+  readonly "workspaceError": string;
   readonly "newChat": string;
   readonly "newChatIcon": string;
   readonly "listWrap": string;

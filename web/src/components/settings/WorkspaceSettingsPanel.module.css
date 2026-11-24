@@ -1,0 +1,88 @@
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+
+  & + & {
+    box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.binding {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bindingLabel {
+  flex-shrink: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.binding > button {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
+  text-align: start;
+}
+
+.errorRow,
+.cardError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.errorRow > span,
+.cardError > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardError > button {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media not all and (min-width: 768px) {
+  .binding {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .binding > button {
+    width: 100%;
+    max-width: none;
+  }
+}

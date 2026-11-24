@@ -109,6 +109,12 @@ What happens automatically:
 
 Any single value can be overridden by setting its environment variable, which takes precedence over the defaults this key provides.
 
+## Workspace role cards
+
+Workspaces organize chats in both self-hosted and cloud modes. In self-hosted mode, Settings → Workspaces can also bind one role card to each workspace. The backend chooses the prompt from the session's stored workspace: workspace card first, then the global active card. New chats use the workspace selected when they are created. Deleting a workspace moves its chats to Ungrouped; it does not delete them.
+
+ZIP history export/import contains chats and attachments only. Workspaces and role-card bindings are not exported, and imported chats are ungrouped.
+
 ## The two LLM protocols
 
 `LLM_PROVIDER` decides which request the backend sends upstream. Under both protocols, web search, page reading, citation numbers, thinking, attachments (images / OCR), auto titles and context compression use the same logic — nothing extra to configure.
@@ -121,9 +127,9 @@ Any single value can be overridden by setting its environment variable, which ta
 What the OpenAI path covers:
 
 - **Thinking**: both `reasoning_content` (DeepSeek / vLLM) and `reasoning` fields are recognized and shown as a thinking block; no field means no block.
-- **Tool calls**: `tools` become function calling; returned `tool_calls` run web_search / read_url locally and are sent back as `role: tool` messages. Search cards and citation numbers keep working.
+- **Tool calls**: `tools` become function calling; returned `tool_calls` run web_search / read_url locally and are sent back as `role: tool` messages. Search cards and citation numbers keep working. Once search is configured, read_url is always declared; the search toggle only removes web_search, and find_in_page additionally requires thinking. A call to an undeclared tool gets a "not run" tool_result and the reply continues.
 - **Usage**: `prompt_tokens` / `completion_tokens` feed the context meter; `prompt_tokens_details.cached_tokens` counts as cache hits.
-- **Images**: base64 images become `image_url` data URLs. The upstream model must support vision; otherwise set `CHAT_LOCAL_IMAGE_MODE=auto` to fall back to OCR.
+- **Images**: base64 images become `image_url` data URLs. The upstream model must support vision; with the default `CHAT_LOCAL_IMAGE_PARSER=vision`, a rejected image is retried once through OCR (OCR credentials required). You can also select `openai` or `deepseek` directly.
 - **Fallbacks**: if the server rejects `stream_options` it is retried once without it; servers that ignore `stream` and return plain JSON also work.
 - **Custom headers**: set `LLM_HEADERS` to a JSON object to add or override request headers (the default `User-Agent` is python-httpx, so declare your own identity here). Works under both protocols, including title and compression requests. Placeholders:
 

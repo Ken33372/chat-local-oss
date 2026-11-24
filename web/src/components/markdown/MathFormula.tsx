@@ -15,21 +15,27 @@ type MathHtmlResult = {
 const noop = () => {}
 
 /** KaTeX 渲染公式；出错时保留上次成功的结果（流式中公式未写完），没有则展示原文 */
-const useMathHtml = (input: string, isInline: boolean): MathHtmlResult => {
+const useMathHtml = (input: string, isInline: boolean, loading: boolean): MathHtmlResult => {
   const previousResultRef = useRef<MathHtmlResult | null>(null)
-  const katexRef = useRef(ensureKatex())
+  const katexRef = useRef<Katex | Promise<Katex> | undefined>(undefined)
+  if (!loading && katexRef.current === undefined) {
+    katexRef.current = ensureKatex()
+  }
   const [katex, setKatex] = useState<Katex | null>(
-    katexRef.current instanceof Promise ? null : katexRef.current
+    katexRef.current instanceof Promise ? null : (katexRef.current ?? null)
   )
 
   useEffect(() => {
-    if (katexRef.current instanceof Promise) {
-      katexRef.current.then(setKatex, noop)
+    const ensured = katexRef.current
+    if (ensured instanceof Promise) {
+      ensured.then(setKatex, noop)
+    } else if (ensured) {
+      setKatex(ensured)
     }
-  }, [])
+  }, [loading])
 
   return useMemo((): MathHtmlResult => {
-    if (!katex) {
+    if (!katex || loading) {
       return { html: input, renderMode: 'fallback' }
     }
     try {
@@ -43,11 +49,17 @@ const useMathHtml = (input: string, isInline: boolean): MathHtmlResult => {
     } catch {
       return previousResultRef.current ?? { html: input, renderMode: 'fallback' }
     }
-  }, [input, isInline, katex])
+  }, [input, isInline, katex, loading])
 }
 
-export const MathBlock = memo(function MathBlock({ value }: { value: string }) {
-  const { html, renderMode } = useMathHtml(value, false)
+export const MathBlock = memo(function MathBlock({
+  value,
+  loading = false,
+}: {
+  value: string
+  loading?: boolean
+}) {
+  const { html, renderMode } = useMathHtml(value, false, loading)
   if (renderMode === 'fallback') {
     return <p className="ds-markdown-paragraph">{html}</p>
   }
@@ -59,7 +71,7 @@ export const MathBlock = memo(function MathBlock({ value }: { value: string }) {
 })
 
 export const InlineMath = memo(function InlineMath({ value }: { value: string }) {
-  const { html, renderMode } = useMathHtml(value, true)
+  const { html, renderMode } = useMathHtml(value, true, false)
   if (renderMode === 'fallback') {
     return html
   }

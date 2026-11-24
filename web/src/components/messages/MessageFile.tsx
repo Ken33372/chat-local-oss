@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { useUploads } from '../../services/attachments.js'
-import { loadFile } from '../../services/chat/db.js'
+import { attachmentCache } from '../../services/attachmentCache.js'
 import type { FileAttachment } from '../../services/chat/types.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -13,19 +13,25 @@ import styles from './MessageFile.module.css'
 const useFileUrl = (id: string) => {
   const [fileUrl, setFileUrl] = useState<{ id: string; url: string | null } | null>(null)
   useEffect(() => {
-    let objectUrl: string | null = null
     let cancelled = false
-    loadFile(id).then((blob) => {
-      if (!cancelled) {
-        objectUrl = blob ? URL.createObjectURL(blob) : null
-        setFileUrl({ id, url: objectUrl })
-      }
-    })
+    let release: (() => void) | undefined
+    void attachmentCache.acquire(id)
+      .then((handle) => {
+        if (cancelled) {
+          handle.release()
+          return
+        }
+        release = handle.release
+        setFileUrl({ id, url: handle.url })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFileUrl({ id, url: null })
+        }
+      })
     return () => {
       cancelled = true
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl)
-      }
+      release?.()
     }
   }, [id])
   return fileUrl?.id === id ? fileUrl.url : undefined
@@ -73,7 +79,13 @@ export const MessageFile = ({
           <IconPhotoErrorFill20 />
         </span>
       ) : (
-        <img src={url} alt={file.name} onError={() => setFailedUrl(url)} />
+        <img
+          src={url}
+          alt={file.name}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedUrl(url)}
+        />
       )
     ) : null
 

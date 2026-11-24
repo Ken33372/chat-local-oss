@@ -86,7 +86,7 @@ export const CodeBlock = memo(function CodeBlock({
   const lang = getHighlightLang(infostring)
   const loaded = lang !== null && isHighlightLoaded(lang)
   useEffect(() => {
-    if (lang === null || loaded) {
+    if (loading || lang === null || loaded) {
       return
     }
     let unmounted = false
@@ -98,11 +98,14 @@ export const CodeBlock = memo(function CodeBlock({
     return () => {
       unmounted = true
     }
-  }, [lang, loaded, rerender])
+  }, [loading, lang, loaded, rerender])
   const renderedHtml = useMemo(() => {
+    if (loading) {
+      return null
+    }
     const name = lang !== null && loaded ? lang : 'plaintext'
     return Prism.highlight(code, Prism.languages[name], name)
-  }, [code, lang, loaded])
+  }, [loading, code, lang, loaded])
   return (
     <div className="md-code-block">
       <div className="md-code-block-banner">
@@ -115,8 +118,10 @@ export const CodeBlock = memo(function CodeBlock({
       </div>
       {isMermaid && showDiagram ? (
         <MermaidDiagram code={code} loading={loading} />
+      ) : loading ? (
+        <pre>{code}</pre>
       ) : (
-        <pre dangerouslySetInnerHTML={{ __html: renderedHtml }}></pre>
+        <pre dangerouslySetInnerHTML={{ __html: renderedHtml ?? '' }}></pre>
       )}
     </div>
   )
