@@ -8,7 +8,7 @@ import {
   IconThinkOutline14,
 } from '../base/icons.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
-import { useWorkspaceStore } from '../../services/workspaces.js'
+import { toChatWorkspaceId, useWorkspaceStore } from '../../services/workspaces.js'
 import { useCapabilities } from '../../services/capabilities.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { compressContext, sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
@@ -169,7 +169,10 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       return
     }
     // 文本与上传完成态由提交动作读取最新快照，不使用上一次渲染的草稿。
-    if (!ensureApiKey() || !sendMessage(sessionId, useWorkspaceStore.getState().selectedId)) {
+    if (
+      !ensureApiKey() ||
+      !sendMessage(sessionId, toChatWorkspaceId(useWorkspaceStore.getState().selectedId))
+    ) {
       return
     }
     stopReadAloud()

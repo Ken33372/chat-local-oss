@@ -12,7 +12,7 @@ import {
   type Workspace,
 } from '../../services/workspaces.js'
 import { Button } from '../base/Button.js'
-import { IconEditOutline16, IconTrashOutline16 } from '../base/icons.js'
+import { IconEditOutline16, IconFolderOutline16, IconTrashOutline16 } from '../base/icons.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
@@ -199,12 +199,36 @@ export const WorkspaceSettingsPanel = () => {
         ) : items.length === 0 ? (
           <div className={styles.memoryHint}>{t('workspaceSettingsEmpty')}</div>
         ) : (
-          <div className={styles.memoryList}>
-            {items.map((workspace) => (
-              <div key={workspace.id} className={workspaceStyles.item}>
-                <div className={workspaceStyles.header}>
+          <>
+            {local && cardsLoading ? (
+              <div className={styles.memoryHint}>{t('workspaceCardsLoading')}</div>
+            ) : null}
+            {local && cardsError ? (
+              <div className={workspaceStyles.cardError} role="alert">
+                <span>{t('workspaceCardsFailed', { message: cardsError })}</span>
+                <button type="button" onClick={() => void loadCards()}>
+                  {t('retry')}
+                </button>
+              </div>
+            ) : null}
+            <div className={styles.memoryList}>
+              {items.map((workspace) => (
+                <div key={workspace.id} className={workspaceStyles.item}>
+                  <span className={workspaceStyles.folder}>
+                    <IconFolderOutline16 />
+                  </span>
                   <div className={workspaceStyles.name} title={workspace.name}>
                     {workspace.name}
+                  </div>
+                  <div className={workspaceStyles.binding}>
+                    <span className={workspaceStyles.bindingLabel}>{t('workspaceCard')}</span>
+                    <Select
+                      ariaLabel={t('workspaceCardFor', { name: workspace.name })}
+                      value={workspace.cardId ?? ''}
+                      options={cardOptions(workspace)}
+                      disabled={busy || cardsDisabled}
+                      onChange={(value) => bindCard(workspace, value || null)}
+                    />
                   </div>
                   <div className={styles.memoryActions}>
                     <button
@@ -229,30 +253,9 @@ export const WorkspaceSettingsPanel = () => {
                     </button>
                   </div>
                 </div>
-                <div className={workspaceStyles.binding}>
-                  <span className={workspaceStyles.bindingLabel}>{t('workspaceCard')}</span>
-                  <Select
-                    ariaLabel={t('workspaceCardFor', { name: workspace.name })}
-                    value={workspace.cardId ?? ''}
-                    options={cardOptions(workspace)}
-                    disabled={busy || cardsDisabled}
-                    onChange={(value) => bindCard(workspace, value || null)}
-                  />
-                </div>
-                {local && cardsLoading ? (
-                  <div className={styles.memoryHint}>{t('workspaceCardsLoading')}</div>
-                ) : null}
-                {local && cardsError ? (
-                  <div className={workspaceStyles.cardError} role="alert">
-                    <span>{t('workspaceCardsFailed', { message: cardsError })}</span>
-                    <button type="button" onClick={() => void loadCards()}>
-                      {t('retry')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 

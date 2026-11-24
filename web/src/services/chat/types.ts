@@ -116,7 +116,7 @@ export type Session = {
   title: string
   createdAt: number
   updatedAt: number
-  /** 所属工作区；旧数据和导入会话为 null（未分组）。 */
+  /** 所属工作区；旧数据和导入会话为 null（不绑定工作区）。 */
   workspaceId: string | null
   /** 包含所有分支的消息，按创建顺序存储。 */
   messages: Message[]
@@ -133,7 +133,7 @@ export type Session = {
 
 /** 会话列表元数据；消息只在打开会话时加载。 */
 export type SessionSummary = Pick<Session, 'id' | 'title' | 'createdAt' | 'updatedAt'> & {
-  /** 与详情相同的归属；旧列表缺省时按未分组处理。 */
+  /** 与详情相同的归属；旧列表缺省时按不绑定工作区处理。 */
   workspaceId: string | null
   /** 归档后只出现在归档列表，不在侧栏显示。 */
   archived?: boolean

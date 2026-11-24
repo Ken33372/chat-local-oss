@@ -164,7 +164,7 @@ const toLocalBody = (
   ...(body.context_summary ? { context_summary: body.context_summary } : {}),
   // 后端用它填 {session} 请求头，供要求稳定会话 ID 的服务做路由与缓存
   ...(sessionId ? { session_id: sessionId } : {}),
-  // 仅本地请求携带；null 明确表示未分组，不会泄漏到云端请求体。
+  // 仅本地请求携带；null 明确表示不绑定工作区，不会泄漏到云端请求体。
   workspace_id: workspaceId,
 })
 

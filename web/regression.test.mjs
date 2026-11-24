@@ -408,6 +408,27 @@ test('workspace store resets stale selection and exposes recoverable load and mu
   assert.equal(env.api.useWorkspaceStore.getState().items.length, 1)
 })
 
+test('unassigned workspace remains a stable virtual filter and maps to null for chats', async () => {
+  const disk = [workspace('w1', 1)]
+  const env = await workspaceStore(async (url, init) => {
+    if (url === '/api/chat/workspaces' && (init.method ?? 'GET') === 'GET') {
+      return ok({ workspaces: disk })
+    }
+    throw Error(`Unexpected route ${init.method} ${url}`)
+  })
+
+  await env.api.loadWorkspaces()
+  env.api.selectWorkspace(env.api.UNASSIGNED_WORKSPACE_ID)
+  assert.equal(env.api.useWorkspaceStore.getState().selectedId, env.api.UNASSIGNED_WORKSPACE_ID)
+
+  disk.splice(0, 1)
+  await env.api.loadWorkspaces(true)
+  assert.equal(env.api.useWorkspaceStore.getState().selectedId, env.api.UNASSIGNED_WORKSPACE_ID)
+  assert.equal(env.api.toChatWorkspaceId(env.api.UNASSIGNED_WORKSPACE_ID), null)
+  assert.equal(env.api.toChatWorkspaceId(null), null)
+  assert.equal(env.api.toChatWorkspaceId('w1'), 'w1')
+})
+
 test('queued attachments keep their selected mode after a settings change', async () => {
   let mode = 'local'
   const barrier = deferred()

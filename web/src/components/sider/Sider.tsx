@@ -2,11 +2,15 @@ import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import {
+  IconAddOutline16,
   IconCloseOutline16,
+  IconEditOutline16,
+  IconEllipsisOutline16,
+  IconFolderOutline16,
   IconPanelLeftOutline16,
   IconSearchOutline16,
   IconSettingsOutline16,
-  NewChatIcon,
+  IconTrashOutline16,
 } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
@@ -20,22 +24,29 @@ import {
 } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import {
+  createWorkspace,
+  deleteWorkspace,
   loadWorkspaces,
   moveSession,
+  renameWorkspace,
   selectWorkspace,
+  UNASSIGNED_WORKSPACE_ID,
   useWorkspaceStore,
+  type Workspace,
 } from '../../services/workspaces.js'
 import { formatDate } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
+import { Menu } from '../base/Menu.js'
 import { Modal } from '../base/Modal.js'
-import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
 import { useDebugPanel } from '../debug/debugPanelState.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
+
+const MAX_WORKSPACE_NAME = 40
 
 /** 展开的侧边栏：名称与收起按钮、开启新对话、按时间分组的会话列表、底部设置；移动端放在抽屉里，收起按钮关闭抽屉 */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
@@ -47,13 +58,22 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const workspacesLoading = useWorkspaceStore((state) => state.loading)
   const workspacesLoaded = useWorkspaceStore((state) => state.loaded)
   const workspaceError = useWorkspaceStore((state) => state.error)
+  const [workspaceEditor, setWorkspaceEditor] = useState<{ id: string | null; name: string } | null>(
+    null
+  )
+  const [workspaceDeleting, setWorkspaceDeleting] = useState<Workspace | null>(null)
+  const [workspaceBusy, setWorkspaceBusy] = useState(false)
+  const workspaceBusyRef = useRef(false)
   const [now, setNow] = useState(Date.now)
   const visibleSessions = useMemo(
     () =>
       sessions.filter(
         (session) =>
           !session.archived &&
-          (selectedWorkspaceId === null || (session.workspaceId ?? null) === selectedWorkspaceId)
+          (selectedWorkspaceId === null ||
+            (selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID
+              ? (session.workspaceId ?? null) === null
+              : (session.workspaceId ?? null) === selectedWorkspaceId))
       ),
     [sessions, selectedWorkspaceId]
   )
@@ -82,6 +102,64 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       showToast({ key: 'archiveFailed', type: 'error' })
     }
   }, [])
+  const runWorkspaceAction = async (operation: () => Promise<void>) => {
+    if (workspaceBusyRef.current) {
+      return
+    }
+    workspaceBusyRef.current = true
+    setWorkspaceBusy(true)
+    try {
+      await operation()
+    } catch (error) {
+      showToast({
+        key: 'workspaceFailedWithReason',
+        params: { message: error instanceof Error ? error.message : String(error) },
+        type: 'error',
+      })
+    } finally {
+      workspaceBusyRef.current = false
+      setWorkspaceBusy(false)
+    }
+  }
+  const saveWorkspaceEditor = () => {
+    const current = workspaceEditor
+    const name = current?.name.trim() ?? ''
+    if (!current || !name || workspaceBusyRef.current) {
+      return
+    }
+    if (
+      current.id !== null &&
+      workspaces.find((workspace) => workspace.id === current.id)?.name === name
+    ) {
+      setWorkspaceEditor(null)
+      return
+    }
+    void runWorkspaceAction(async () => {
+      if (current.id === null) {
+        await createWorkspace(name)
+        showToast({ key: 'workspaceCreated' })
+      } else {
+        await renameWorkspace(current.id, name)
+        showToast({ key: 'workspaceRenamed' })
+      }
+      setWorkspaceEditor(null)
+    })
+  }
+  const confirmWorkspaceDelete = () => {
+    const current = workspaceDeleting
+    if (!current || workspaceBusyRef.current) {
+      return
+    }
+    void runWorkspaceAction(async () => {
+      const result = await deleteWorkspace(current.id)
+      setWorkspaceDeleting(null)
+      showToast({ key: 'workspaceDeleted', params: { count: result.moved } })
+    })
+  }
+  const chooseWorkspace = (id: string | null) => {
+    selectWorkspace(id)
+    closeMobileSider()
+  }
 
   // 隐藏入口：1.5 秒内连点标题 5 次打开调试面板
   const onNameClick = () => {
@@ -236,17 +314,135 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           ) : null}
         </label>
       ) : null}
-      <Select
-        className={styles.workspaceFilter}
-        ariaLabel={t('workspaceFilter')}
-        value={selectedWorkspaceId ?? ''}
-        disabled={workspacesLoading && !workspacesLoaded}
-        options={[
-          { value: '', label: t('workspaceAll') },
-          ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name })),
-        ]}
-        onChange={(value) => selectWorkspace(value || null)}
-      />
+      <div className={styles.workspaceNav}>
+        <div className={styles.workspaceHeader}>
+          <span className={styles.workspaceHeaderTitle}>{t('workspaces')}</span>
+          <div className={styles.workspaceHeaderActions}>
+            <button
+              type="button"
+              className={clsx(
+                styles.workspaceAll,
+                selectedWorkspaceId === null && styles.workspaceAllActive
+              )}
+              aria-pressed={selectedWorkspaceId === null}
+              onClick={() => chooseWorkspace(null)}
+            >
+              {t('workspaceAll')}
+            </button>
+            <IconButton
+              icon={<IconAddOutline16 />}
+              tooltip={t('workspaceCreate')}
+              disabled={!workspacesLoaded || workspaceBusy}
+              onClick={() => setWorkspaceEditor({ id: null, name: '' })}
+            />
+          </div>
+        </div>
+        <div className={styles.workspaceList} aria-label={t('workspaces')}>
+          <div
+            className={clsx(
+              styles.workspaceRow,
+              selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID && styles.workspaceRowActive
+            )}
+          >
+            <button
+              type="button"
+              className={styles.workspaceSelect}
+              aria-pressed={selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID}
+              onClick={() => chooseWorkspace(UNASSIGNED_WORKSPACE_ID)}
+            >
+              <span className={styles.workspaceIcon}>
+                <IconFolderOutline16 />
+              </span>
+              <span className={styles.workspaceName}>{t('workspaceUngrouped')}</span>
+            </button>
+            {selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID ? (
+              <div className={styles.workspaceActions}>
+                <IconButton
+                  className={styles.workspaceAdd}
+                  icon={<IconAddOutline16 />}
+                  tooltip={t('newChatInWorkspace', { name: t('workspaceUngrouped') })}
+                  onClick={() => {
+                    newChat(null)
+                    closeMobileSider()
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+          {workspaces.map((workspace) => {
+            const active = workspace.id === selectedWorkspaceId
+            return (
+              <div
+                key={workspace.id}
+                className={clsx(styles.workspaceRow, active && styles.workspaceRowActive)}
+              >
+                <button
+                  type="button"
+                  className={styles.workspaceSelect}
+                  aria-pressed={active}
+                  onClick={() => chooseWorkspace(workspace.id)}
+                >
+                  <span className={styles.workspaceIcon}>
+                    <IconFolderOutline16 />
+                  </span>
+                  <span className={styles.workspaceName} title={workspace.name}>
+                    {workspace.name}
+                  </span>
+                </button>
+                <div className={styles.workspaceActions} onClick={(event) => event.stopPropagation()}>
+                  <Menu
+                    options={[
+                      {
+                        key: 'rename',
+                        label: t('workspaceRename'),
+                        icon: <IconEditOutline16 />,
+                        onSelect: () => setWorkspaceEditor({ id: workspace.id, name: workspace.name }),
+                      },
+                      {
+                        key: 'card',
+                        label: t('workspaceCardSettings'),
+                        icon: <IconSettingsOutline16 />,
+                        onSelect: () => openSettings('workspaces'),
+                      },
+                      {
+                        key: 'delete',
+                        label: t('workspaceDelete'),
+                        icon: <IconTrashOutline16 />,
+                        danger: true,
+                        onSelect: () => setWorkspaceDeleting(workspace),
+                      },
+                    ]}
+                  >
+                    {({ toggle }) => (
+                      <IconButton
+                        icon={<IconEllipsisOutline16 />}
+                        tooltip={t('more')}
+                        aria-label={t('more')}
+                        disabled={workspaceBusy}
+                        onClick={toggle}
+                      />
+                    )}
+                  </Menu>
+                  {active ? (
+                    <IconButton
+                      className={styles.workspaceAdd}
+                      icon={<IconAddOutline16 />}
+                      tooltip={t('newChatInWorkspace', { name: workspace.name })}
+                      onClick={() => {
+                        newChat(workspace.id)
+                        closeMobileSider()
+                      }}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
+          {workspacesLoaded && workspaces.length === 0 ? (
+            <div className={styles.workspaceEmpty}>{t('workspaceSettingsEmpty')}</div>
+          ) : null}
+        </div>
+      </div>
       {workspaceError ? (
         <div className={clsx(styles.workspaceNotice, styles.workspaceError)} role="alert">
           <span title={workspaceError}>{t('workspaceLoadFailed')}</span>
@@ -259,26 +455,6 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           {t('workspaceLoading')}
         </div>
       ) : null}
-      <button
-        type="button"
-        className={styles.newChat}
-        title={
-          selectedWorkspaceId
-            ? t('newChatInWorkspace', {
-                name: workspaces.find((workspace) => workspace.id === selectedWorkspaceId)?.name ?? '',
-              })
-            : t('newChat')
-        }
-        onClick={() => {
-          newChat(selectedWorkspaceId)
-          closeMobileSider()
-        }}
-      >
-        <span className={styles.newChatIcon}>
-          <NewChatIcon />
-        </span>
-        {t('newChat')}
-      </button>
       <div className={styles.listWrap}>
         {query.trim() ? (
           <div className={styles.searchResults}>
@@ -359,6 +535,88 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           <span className={styles.settingsLabel}>{t('settings')}</span>
         </button>
       </div>
+      {workspaceEditor ? (
+        <Modal
+          title={t(workspaceEditor.id === null ? 'workspaceCreate' : 'workspaceRename')}
+          onClose={() => {
+            if (!workspaceBusyRef.current) {
+              setWorkspaceEditor(null)
+            }
+          }}
+          footer={
+            <div className={styles.workspaceEditorActions}>
+              <Button
+                variant="outlined"
+                disabled={workspaceBusy}
+                onClick={() => setWorkspaceEditor(null)}
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                disabled={
+                  workspaceBusy ||
+                  !workspaceEditor.name.trim() ||
+                  (workspaceEditor.id !== null &&
+                    workspaces.find((workspace) => workspace.id === workspaceEditor.id)?.name ===
+                      workspaceEditor.name.trim())
+                }
+                onClick={saveWorkspaceEditor}
+              >
+                {t('memorySave')}
+              </Button>
+            </div>
+          }
+        >
+          <label className={styles.workspaceEditorField}>
+            <span className={styles.workspaceEditorLabel}>{t('workspaceName')}</span>
+            <input
+              className={styles.workspaceEditorInput}
+              value={workspaceEditor.name}
+              maxLength={MAX_WORKSPACE_NAME}
+              autoFocus
+              disabled={workspaceBusy}
+              placeholder={t('workspaceNamePlaceholder')}
+              onChange={(event) =>
+                setWorkspaceEditor({ ...workspaceEditor, name: event.target.value })
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  event.preventDefault()
+                  saveWorkspaceEditor()
+                }
+              }}
+            />
+          </label>
+        </Modal>
+      ) : null}
+
+      {workspaceDeleting ? (
+        <Modal
+          title={t('workspaceDelete')}
+          onClose={() => {
+            if (!workspaceBusyRef.current) {
+              setWorkspaceDeleting(null)
+            }
+          }}
+          footer={
+            <div className={styles.workspaceEditorActions}>
+              <Button
+                variant="outlined"
+                disabled={workspaceBusy}
+                onClick={() => setWorkspaceDeleting(null)}
+              >
+                {t('cancel')}
+              </Button>
+              <Button variant="danger" disabled={workspaceBusy} onClick={confirmWorkspaceDelete}>
+                {t('delete')}
+              </Button>
+            </div>
+          }
+        >
+          {t('workspaceDeleteDescription', { name: workspaceDeleting.name })}
+        </Modal>
+      ) : null}
+
       {deleting ? (
         <Modal
           title={t('deleteSessionModalContentTitle')}

@@ -543,7 +543,7 @@ export const mergeHistory = async (
   }
 }
 
-/** workspaceId 为 null 时创建未分组对话；具体工作区由侧栏筛选显式传入。 */
+/** workspaceId 为 null 时创建不绑定工作区对话；具体工作区由侧栏筛选显式传入。 */
 export const newChat = (workspaceId: string | null = null) => {
   if (!get().importingHistory) {
     set({ activeId: null, pendingWorkspaceId: workspaceId })

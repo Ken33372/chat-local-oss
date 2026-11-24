@@ -150,8 +150,8 @@ LLM, search, ASR and attachment parsing are configured independently:
 ### Conversations and data
 
 - **Local storage:** FastAPI + SQLite store chats, workspaces and attachments in `data/chat.db` and `data/files/`.
-- **Workspaces:** create, rename and delete them in Settings → Workspaces. Filter the sidebar by workspace; new chats started there belong to it automatically. Move chats from the session menu. Deleting a workspace moves its chats to Ungrouped and never deletes them.
-- **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import. ZIP files contain chats and attachments only, not workspaces or role cards; imported chats are ungrouped.
+- **Workspaces:** create, rename and delete them in Settings → Workspaces. Filter the sidebar by workspace; new chats started there belong to it automatically. Move chats from the session menu. Unassigned chats appear in the fixed “Unassigned workspace” item. Deleting a workspace moves its chats there and never deletes them.
+- **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import. ZIP files contain chats and attachments only, not workspaces or role cards; imported chats appear in “Unassigned workspace”.
 - **Chat search:** search message text from the sidebar; results are grouped by chat with matching snippets. Archived chats are excluded.
 - **Archive and restore:** archive from the session menu; open, restore, or permanently delete archived chats under Settings → Data management → View archive.
 - **Chat cleanup:** delete chats older than N years/months or inside a date range; remove tool-call records and image originals from all chats.

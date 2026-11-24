@@ -139,6 +139,23 @@ export const IconEllipsisOutline16 = () => (
   </svg>
 )
 
+export const IconFolderOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M1.75 4.25C1.75 3.69772 2.19772 3.25 2.75 3.25H6.08579C6.51572 3.25 6.92543 3.43977 7.17544 3.76256L7.82456 4.58744C8.07457 4.91023 8.48428 5.1 8.91421 5.1H13.25C13.8023 5.1 14.25 5.54772 14.25 6.1V11.9C14.25 12.4523 13.8023 12.9 13.25 12.9H2.75C2.19772 12.9 1.75 12.4523 1.75 11.9V4.25Z"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
+export const IconAddOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 3.25V12.75M3.25 8H12.75" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" />
+  </svg>
+)
+
 export const IconFollowsystemOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M12.4827 13.9839V15.2741H3.33758V13.9839H12.4827Z" fill="currentColor" />

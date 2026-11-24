@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { request } from './api/client.js'
 import { useChatStore, waitForSessionSave } from './chat/store.js'
 
-/** 工作区只组织会话；null 的会话属于未分组。 */
+/** 工作区只组织会话；null 的会话属于不绑定工作区。 */
 export type Workspace = {
   id: string
   name: string
@@ -14,6 +14,12 @@ export type Workspace = {
 
 export type WorkspacePatch = Partial<Pick<Workspace, 'name' | 'cardId' | 'sortOrder'>>
 export type DeleteWorkspaceResult = { ok: boolean; moved: number }
+
+/** 侧栏里的虚拟工作区；数据库中的会话归属仍保持 null。 */
+export const UNASSIGNED_WORKSPACE_ID = '__unassigned__'
+
+export const toChatWorkspaceId = (selectedId: string | null): string | null =>
+  selectedId === UNASSIGNED_WORKSPACE_ID ? null : selectedId
 
 const guard = { 'X-Chat-Local': '1', 'Content-Type': 'application/json' }
 
@@ -98,7 +104,7 @@ const errorMessage = (error: unknown) => {
 
 type WorkspaceState = {
   items: Workspace[]
-  /** null 表示全部对话，不是未分组。 */
+  /** null 表示全部对话；UNASSIGNED_WORKSPACE_ID 表示“不绑定工作区”。 */
   selectedId: string | null
   loaded: boolean
   loading: boolean
@@ -137,7 +143,9 @@ export const loadWorkspaces = async (force = false): Promise<void> => {
         error: null,
         // 工作区在别处被删除后，不能继续显示一个空筛选器。
         selectedId:
-          current.selectedId !== null && !items.some((item) => item.id === current.selectedId)
+          current.selectedId !== null &&
+          current.selectedId !== UNASSIGNED_WORKSPACE_ID &&
+          !items.some((item) => item.id === current.selectedId)
             ? null
             : current.selectedId,
       }))
@@ -157,7 +165,11 @@ export const loadWorkspaces = async (force = false): Promise<void> => {
 const getWorkspaceState = () => useWorkspaceStore.getState()
 
 export const selectWorkspace = (id: string | null) => {
-  if (id === null || getWorkspaceState().items.some((item) => item.id === id)) {
+  if (
+    id === null ||
+    id === UNASSIGNED_WORKSPACE_ID ||
+    getWorkspaceState().items.some((item) => item.id === id)
+  ) {
     useWorkspaceStore.setState({ selectedId: id })
   }
 }
@@ -247,7 +259,7 @@ const applySessionWorkspace = (sessionId: string, workspaceId: string | null) =>
   })
 }
 
-/** 删除工作区后，后端已将其中全部会话移入未分组（包含已归档会话）。 */
+/** 删除工作区后，后端已将其中全部会话移入不绑定工作区（包含已归档会话）。 */
 const unassignWorkspaceSessions = (workspaceId: string) => {
   useChatStore.setState((state) => {
     const sessionChanged = state.sessions.some((session) => session.workspaceId === workspaceId)

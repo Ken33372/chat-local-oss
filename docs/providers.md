@@ -111,9 +111,9 @@ Any single value can be overridden by setting its environment variable, which ta
 
 ## Workspace role cards
 
-Workspaces organize chats in both self-hosted and cloud modes. In self-hosted mode, Settings → Workspaces can also bind one role card to each workspace. The backend chooses the prompt from the session's stored workspace: workspace card first, then the global active card. New chats use the workspace selected when they are created. Deleting a workspace moves its chats to Ungrouped; it does not delete them.
+Workspaces organize chats in both self-hosted and cloud modes. In self-hosted mode, Settings → Workspaces can also bind one role card to each workspace. The backend chooses the prompt from the session's stored workspace: workspace card first, then the global active card. New chats use the workspace selected when they are created. Unassigned chats appear in the fixed “Unassigned workspace” item. Deleting a workspace moves its chats there; it does not delete them.
 
-ZIP history export/import contains chats and attachments only. Workspaces and role-card bindings are not exported, and imported chats are ungrouped.
+ZIP history export/import contains chats and attachments only. Workspaces and role-card bindings are not exported, and imported chats appear in “Unassigned workspace”.
 
 ## The two LLM protocols
 
