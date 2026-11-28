@@ -134,7 +134,7 @@ export const en = {
     'Anthropic-compatible uses endpoints such as DeepSeek /anthropic; OpenAI-compatible covers OpenAI, Ollama, LM Studio, vLLM and similar services.',
   setupLlmHeaders: 'Extra headers (JSON, optional)',
   setupLlmHeadersHint:
-    'e.g. {"api-key": "{key}"} or {"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}. Placeholders: {key} (API key), {session} (conversation ID), {model}. Leave blank to keep saved headers; enter {} to clear.',
+    'e.g. {"api-key": "{key}"} or {"User-Agent": "chat-local-oss/0.1.4", "x-session-id": "{session}"}. Placeholders: {key} (API key), {session} (conversation ID), {model}. Leave blank to keep saved headers; enter {} to clear.',
   setupLlmHeadersSaved: 'Saved: {names}; leave blank to keep',
   setupBaseUrl: 'Base URL',
   setupApiKey: 'API key',

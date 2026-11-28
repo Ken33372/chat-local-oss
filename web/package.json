@@ -1,6 +1,6 @@
 {
   "name": "chat-local",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "本地优先的聊天应用：DeepSeek 云端或自建 Anthropic 兼容后端。",
   "license": "MIT",
   "private": true,

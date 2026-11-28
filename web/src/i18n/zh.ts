@@ -128,7 +128,7 @@ export const zh = {
     'Anthropic 兼容填到 /anthropic 这类端点；OpenAI 兼容可接 OpenAI、Ollama、LM Studio、vLLM 等服务。',
   setupLlmHeaders: '额外请求头（JSON，可选）',
   setupLlmHeadersHint:
-    '例如 {"api-key": "{key}"} 或 {"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}。可用 {key}（API Key）、{session}（当前对话 ID）、{model}。留空沿用已保存的值，填 {} 清空。',
+    '例如 {"api-key": "{key}"} 或 {"User-Agent": "chat-local-oss/0.1.4", "x-session-id": "{session}"}。可用 {key}（API Key）、{session}（当前对话 ID）、{model}。留空沿用已保存的值，填 {} 清空。',
   setupLlmHeadersSaved: '已保存：{names}，留空不修改',
   setupBaseUrl: 'Base URL',
   setupApiKey: 'API Key',

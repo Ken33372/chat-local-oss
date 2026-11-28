@@ -30,6 +30,7 @@ Settings → Prompts. Either no card or exactly one active card. There is no sep
 
 - Card fields: name (≤40 chars), description (≤200, optional), body (≤8000); up to 30 cards, names must be unique
 - One card is active globally for every chat; switching or editing applies to the next request immediately
+- In self-hosted mode each workspace can bind a card, with priority “workspace card → global card”; “Use default character” and missing cards fall back to the global card
 - The body is appended after the built-in identity and date, before the summary and web-tool rules; it **cannot override built-in rules**
 - Stored in `data/prompts.json`, separate from `config.json`, so the setup wizard never overwrites it
 - Cloud mode bypasses the local backend; the settings page only shows a notice
@@ -38,7 +39,7 @@ Prefix cache: the card is fixed text, stable within a conversation; it invalidat
 
 ## What goes into the tail
 
-Long-term memory block (when memory is enabled and injection is on):
+Long-term memory block (when memory is enabled, injection is on, and at least one entry is selected):
 
 ```
 【系统自动附加，不是用户说的话】
@@ -83,7 +84,7 @@ Pinned entries are always kept (up to the slot count); the rest are chosen by th
 | Relevance (local keywords) | Word/character overlap with the latest user message; description hits count double, body hits single | Nothing |
 | Advanced (embeddings) | Description and body are embedded together and ranked by cosine, optionally re-sorted by rerank | `EMBEDDING_*`; rerank optional |
 
-Keyword mode keeps only entries with a literal hit; embedding mode keeps only entries with cosine ≥ the threshold (default 0.42, adjustable via `CHAT_LOCAL_MEMORY_SIM_THRESHOLD`). Fewer hits means fewer items; with no hits only pinned entries remain — possibly none — and there is no fallback to most-recent filling. Stored in the local `chat.db` (`memories` table).
+Keyword mode keeps only entries with a literal hit; embedding mode keeps only entries with cosine ≥ the threshold (default 0.42, adjustable via `CHAT_LOCAL_MEMORY_SIM_THRESHOLD`). Fewer hits means fewer items; with no hits only pinned entries remain — possibly none — and there is no fallback to most-recent filling. With neither pinned entries nor hits, no memory section or empty heading is sent. Stored in the local `chat.db` (`memories` table).
 
 ### Tools
 
@@ -147,4 +148,4 @@ Settings → Memory → Tidy. Finds near-duplicates by literal similarity: ≥80
 | Model still says "waiting for confirmation" | The receipt only goes to the original conversation and only once |
 | Model treats a memory as something the user said | Expected but should be contained: the latest user message should carry the "attached automatically by the system" marker; if it is missing, request assembly is wrong |
 | Memory missing in cloud mode | By design: cloud mode bypasses the local backend |
-| Model ignores the persona | Check whether a card is active; its body should describe style only, not "ignore the rules above" |
+| Model ignores the persona | Check the global card and whether the current workspace binds a different card (workspace cards take priority), or uses “Use default character” |

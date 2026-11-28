@@ -34,7 +34,8 @@ class IsolatedCase(unittest.TestCase):
         self.cfg.MEMORY_WRITE = "confirm"
         self.cfg.MEMORY_SIM_THRESHOLD = 0.42
         self.cfg.MEMORY_SEARCH_MODE = "embedding"
-        self.cfg.MEMORY_INJECT = "embedding"
+        self.cfg.MEMORY_INJECT_MODE = "embedding"
+        self.cfg.MEMORY_INJECT = "recent"
         self.cfg.MEMORY_INJECT_COUNT = 5
         self.cfg.capabilities = lambda: {"embedding": True}
         self.provider = types.ModuleType("providers")
@@ -273,6 +274,17 @@ class StorageTests(IsolatedCase):
 
 
 class MemoryTests(IsolatedCase):
+    def test_injection_uses_selected_mode_instead_of_legacy_recent_flag(self):
+        self.m.clear_all()
+        self.m.add_item("用户正在学习 Stata")
+        self.provider.embedding.embed_batched.side_effect = lambda texts: [[1.0, 0.0] for _ in texts]
+        self.provider.embedding.embed.side_effect = lambda texts: [[0.0, 1.0] for _ in texts]
+
+        output, ids = self.m.injection("今天天气怎么样")
+
+        self.assertEqual(ids, set())
+        self.assertEqual(output, "")
+
     def test_vector_write_rechecks_text_description_and_deletion(self):
         for change in ("text", "description", "delete"):
             with self.subTest(change=change):

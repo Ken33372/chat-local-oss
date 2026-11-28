@@ -113,6 +113,8 @@ Any single value can be overridden by setting its environment variable, which ta
 
 Workspaces organize chats in both self-hosted and cloud modes. In self-hosted mode, Settings → Workspaces can also bind one role card to each workspace. The backend chooses the prompt from the session's stored workspace: workspace card first, then the global active card. New chats use the workspace selected when they are created. Unassigned chats appear in the fixed “Unassigned workspace” item. Deleting a workspace moves its chats there; it does not delete them.
 
+The sidebar header `+` creates a workspace, and the `+` on a selected workspace row starts a chat in it. The workspace `⋯` menu only contains rename, role settings and delete. Session menus use one “Move to…” dialog, so they do not grow with the number of workspaces.
+
 ZIP history export/import contains chats and attachments only. Workspaces and role-card bindings are not exported, and imported chats appear in “Unassigned workspace”.
 
 ## The two LLM protocols
@@ -128,7 +130,7 @@ What the OpenAI path covers:
 
 - **Thinking**: both `reasoning_content` (DeepSeek / vLLM) and `reasoning` fields are recognized and shown as a thinking block; no field means no block.
 - **Tool calls**: `tools` become function calling; returned `tool_calls` run web_search / read_url locally and are sent back as `role: tool` messages. Search cards and citation numbers keep working. Once search is configured, read_url is always declared; the search toggle only removes web_search, and find_in_page additionally requires thinking. A call to an undeclared tool gets a "not run" tool_result and the reply continues.
-- **Usage**: `prompt_tokens` / `completion_tokens` feed the context meter; `prompt_tokens_details.cached_tokens` counts as cache hits.
+- **Usage**: `prompt_tokens` / `completion_tokens` feed the context meter; `prompt_tokens_details.cached_tokens` counts as cache hits and is subtracted from `prompt_tokens` to get uncached input. In statistics, total input = uncached input + cache-creation input + cache-read input, and cache hit rate = cache-read input ÷ total input; output tokens are excluded.
 - **Images**: base64 images become `image_url` data URLs. The upstream model must support vision; with the default `CHAT_LOCAL_IMAGE_PARSER=vision`, a rejected image is retried once through OCR (OCR credentials required). You can also select `openai` or `deepseek` directly.
 - **Fallbacks**: if the server rejects `stream_options` it is retried once without it; servers that ignore `stream` and return plain JSON also work.
 - **Custom headers**: set `LLM_HEADERS` to a JSON object to add or override request headers (the default `User-Agent` is python-httpx, so declare your own identity here). Works under both protocols, including title and compression requests. Placeholders:
@@ -148,7 +150,7 @@ LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.example.com/v1
 LLM_MODEL=your-model
 LLM_API_KEY=sk-xxx
-LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.4", "x-session-id": "{session}"}
 ```
 
 Every request for the same conversation (chat, tool rounds, auto title, compression) carries the same `ses_...`.

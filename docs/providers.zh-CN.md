@@ -114,6 +114,8 @@ TTS_PROVIDER=deepseek
 
 工作区在自建后端模式和云端模式下都能整理对话。自建后端模式还可在「设置 → 工作区」中给每个工作区绑定一张角色卡。后端按会话实际所属的工作区选提示词，优先级为「工作区卡 → 全局卡」；新对话使用创建时选中的工作区。未绑定对话统一收进侧栏的“不绑定工作区”；删除工作区只会把会话移入其中，不删除聊天。
 
+侧栏顶部 `+` 新建工作区，选中工作区行内 `+` 新建对话；工作区 `⋯` 只保留重命名、角色设置和删除。会话菜单统一通过“移动到…”弹窗选择目标，不随工作区数量增加菜单项。
+
 ZIP 历史导出只包含会话和附件，不包含工作区定义与角色卡绑定；导入的会话归入“不绑定工作区”。
 
 ## 对话模型的两条协议
@@ -129,7 +131,7 @@ OpenAI 这一路对齐的细节：
 
 - **思考过程**：认 `reasoning_content`（DeepSeek / vLLM）和 `reasoning` 两种字段，显示为思考块；模型不返回思考就不显示。
 - **工具调用**：`tools` 转成 function calling；模型返回的 `tool_calls` 由本机执行 web_search / read_url，结果按 `role: tool` 回传，搜索卡片和引用编号照常显示。配好搜索后 read_url 始终声明，搜索开关只撤掉 web_search；find_in_page 还需开启深度思考。模型误调未声明的工具时只回一条“未执行”的 tool_result，回复继续。
-- **用量**：`prompt_tokens` / `completion_tokens` 计入上下文提示；`prompt_tokens_details.cached_tokens` 记为缓存命中。
+- **用量**：`prompt_tokens` / `completion_tokens` 计入上下文提示；`prompt_tokens_details.cached_tokens` 记为缓存命中，并从 `prompt_tokens` 中扣除为未命中输入。统计里的总输入 = 未命中输入 + 缓存创建输入 + 缓存读取输入，缓存命中率 = 缓存读取输入 ÷ 总输入；输出 tokens 不参与。
 - **图片**：base64 图片转成 `image_url`（data URL）。上游模型要支持视觉；默认的 `CHAT_LOCAL_IMAGE_PARSER=vision` 在模型拒绝图片时会自动改用 OCR 重试一次（需配好 OCR 凭据），也可以直接选 `openai` 或 `deepseek`。
 - **兼容兜底**：服务端不认 `stream_options` 时自动去掉重试一次；忽略 `stream` 直接回 JSON 的服务也能用。
 - **自定义请求头**：`LLM_HEADERS` 填 JSON 对象，追加或覆盖请求头（默认 `User-Agent` 是 python-httpx，可在这里改成自己的身份）。两种协议都生效，标题和压缩请求也带上。可用占位符：
@@ -149,7 +151,7 @@ LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.example.com/v1
 LLM_MODEL=your-model
 LLM_API_KEY=sk-xxx
-LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}
+LLM_HEADERS={"User-Agent": "chat-local-oss/0.1.4", "x-session-id": "{session}"}
 ```
 
 同一对话的所有请求（正文、工具轮次、自动标题、上下文压缩）都会带同一个 `ses_...`。

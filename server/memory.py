@@ -574,9 +574,9 @@ def _all_rows() -> list[dict]:
 def injection(query: str = "") -> tuple[str, set[int]]:
     """返回 (注入文本, 本轮已注入的 id 集合)；关闭注入时返回空。
 
-    置顶条目始终保留（最多占满名额），其余按注入模式挑选；挑不出结果时回退最近。
+    置顶条目始终保留（最多占满名额），其余按注入模式挑选；挑不出结果时只保留置顶。
     """
-    mode = str(config.MEMORY_INJECT or "recent")
+    mode = str(config.MEMORY_INJECT_MODE or "recent")
     if not config.MEMORY_ENABLED or mode == "off":
         return "", set()
     count = max(1, min(10, int(config.MEMORY_INJECT_COUNT or 5)))
@@ -608,6 +608,8 @@ def injection(query: str = "") -> tuple[str, set[int]]:
                     picked.append(row)
                     chosen.add(row["id"])
     picked = _current_rows(picked)
+    if not picked:
+        return "", set()
     body = "\n".join(
         f"- {row['text']}（说明：{row['description']}）"
         if row["description"]

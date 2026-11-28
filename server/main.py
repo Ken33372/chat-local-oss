@@ -25,7 +25,7 @@ from providers import ocr as ocr_provider
 from providers import search
 from providers import tts as tts_provider
 
-app = FastAPI(title="chat-local", version="0.1.3")
+app = FastAPI(title="chat-local", version="0.1.4")
 storage.init()
 memory.init()
 usage.init()

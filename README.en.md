@@ -2,7 +2,7 @@
 
 # chat-local
 
-> **Positioning: faithfully recreate the core DeepSeek web chat experience while keeping conversations and attachments on your machine; bring that chat experience to more models through an Anthropic-compatible API.**
+> **Positioning: faithfully recreate the core DeepSeek web chat experience while keeping conversations and attachments on your machine; bring that chat experience to more models through Anthropic- or OpenAI-compatible APIs.**
 
 Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Recreate" here covers the core chat loop: chat, thinking, web and deep search, citations, attachments, and voice. It does not include DeepSeek accounts, cloud conversation sync, or every operational feature of the website.
 
@@ -12,11 +12,11 @@ Built on [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). "Rec
 
 ## Project status
 
-This is a **community snapshot (v0.1.3)**, not a continuously maintained product.
+This is a **community snapshot (v0.1.4)**, not a continuously maintained product.
 
 - The UI, message protocol, and DeepSeek Cloud path are inherited from [chat-demo](https://github.com/deepseek-ai/chat-demo); core features are preserved. The self-hosted core paths have offline regression tests, which do not replace testing in real environments.
 - **Not broadly tested:** DeepSeek Cloud, ASR, OCR, TTS, different model backends, and different operating systems are left mainly to community verification.
-- **`main` contains reliability fixes and new features added after v0.1.3** (session saving, import, usage accounting, tool execution, web-fetch boundaries, workspace role cards and streaming performance work); the v0.1.3 portable ZIP on the Releases page predates them. Run from source or build it yourself for the latest code.
+- **`main` may contain fixes newer than v0.1.4.** The portable ZIP is packaged at release time and is not guaranteed to be the latest version. Run from source or build it yourself for the latest code.
 - Issues and PRs are best-effort. Back up `data/` before upgrading; do not treat it as your only copy.
 - When reporting a problem, include your OS, model provider, reproduction steps, and relevant logs.
 
@@ -83,7 +83,7 @@ For a production frontend build, use `cd web && npm run build` (or `build.bat` i
 
 | | DeepSeek Cloud | Self-hosted backend |
 |---|---|---|
-| LLM | Official DeepSeek API | Any Anthropic-compatible model (fully configurable) |
+| LLM | Official DeepSeek API | Any Anthropic- or OpenAI-compatible model (fully configurable) |
 | Requires | A DeepSeek API key | Base URL + API key + model name |
 | History | Local SQLite | Local SQLite |
 
@@ -105,7 +105,7 @@ The wizard only appears when no model is configured; to reopen it later: Setting
 | `DEEPSEEK_API_KEY` | Automatically points LLM, ASR and the DeepSeek OCR profile at DeepSeek; a `deepseek` read-aloud provider reuses this key (you still have to enable `TTS_PROVIDER`). **This shortcut only works from `.env` or system environment variables** — the first-run wizard has no such field |
 | `LLM_PROVIDER` | `anthropic` (default, `POST /v1/messages`) or `openai` (`POST /v1/chat/completions`, e.g. Ollama, LM Studio, vLLM). Search, citations, thinking, attachments, titles and compression behave the same under both; see [docs/providers.md](docs/providers.md#the-two-llm-protocols) |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Model endpoint for the self-hosted backend; Anthropic-compatible accepts a prefix like `/anthropic` or a full `/v1/messages` endpoint, OpenAI-compatible accepts a root, a URL ending in `/v1`, or a full endpoint |
-| `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.3", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
+| `LLM_HEADERS` | Extra request headers as a JSON object. Placeholders: `{key}` is `LLM_API_KEY`, `{session}` is the current conversation ID (like `ses_...`), `{model}` is the model name. Covers Azure-style auth, identity declaration and session IDs (e.g. `{"User-Agent": "chat-local-oss/0.1.4", "x-session-id": "{session}"}`); custom headers override defaults with the same name |
 | `LLM_EXTRA_BODY` | Extra request-body fields as a JSON object, shallow-merged into the upstream request (both protocols); `messages` and `stream` are generated locally and ignored if present. **Only works from `.env` or system environment variables** — not exposed in the wizard |
 | `LLM_CONTEXT_LIMIT` / `LLM_MAX_OUTPUT_TOKENS` | Input limit and max output per request; defaults 131072 / 8192 |
 | `ASR_PROVIDER` | `none` / `deepseek` / `openai` |
@@ -150,7 +150,7 @@ LLM, search, ASR and attachment parsing are configured independently:
 ### Conversations and data
 
 - **Local storage:** FastAPI + SQLite store chats, workspaces and attachments in `data/chat.db` and `data/files/`.
-- **Workspaces:** create, rename and delete them in Settings → Workspaces. Filter the sidebar by workspace; new chats started there belong to it automatically. Move chats from the session menu. Unassigned chats appear in the fixed “Unassigned workspace” item. Deleting a workspace moves its chats there and never deletes them.
+- **Workspaces:** the sidebar header `+` creates a workspace, and the `+` on a selected workspace row starts a chat in it. The workspace `⋯` menu only contains rename, role settings and delete. Session menus use one “Move to…” dialog, so they do not grow with the number of workspaces. New chats started under a workspace belong to it automatically; unassigned chats appear in the fixed “Unassigned workspace” item. Deleting a workspace moves its chats there and never deletes them.
 - **History import/export:** import the official DeepSeek ZIP export (`export_format_version: 3`) using replace, merge-skip-duplicates, or merge-as-copy; optionally discard tool records or image files on import. ZIP files contain chats and attachments only, not workspaces or role cards; imported chats appear in “Unassigned workspace”.
 - **Chat search:** search message text from the sidebar; results are grouped by chat with matching snippets. Archived chats are excluded.
 - **Archive and restore:** archive from the session menu; open, restore, or permanently delete archived chats under Settings → Data management → View archive.
@@ -162,15 +162,15 @@ LLM, search, ASR and attachment parsing are configured independently:
 - **Auto-generated titles:** optional and off by default. After the first reply, the local backend makes one extra model request using the first visible user/assistant turn. Cloud mode keeps DeepSeek's built-in title.
 - **Tool rounds:** adjust the maximum number of web-tool rounds per answer. In cloud mode DeepSeek controls this server-side, and the client does not send the parameter.
 - **Tool switches:** once search is configured, link reading is always declared (whether a body can actually be fetched still depends on the provider); the search toggle only controls web search and in-page find (the latter also needs thinking). If the model calls a tool that is disabled for the round, that call is skipped and the reply continues instead of being aborted.
-- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank), the model can search them and propose new or edited entries, a proposal only takes effect after you confirm it, each entry can carry a short matching description, and near-duplicates can be merged by hand. Export to txt and import txt/JSON (duplicates are skipped). Automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
+- **Long-term memory (self-hosted only, off by default):** Settings → Memory. Memories live in the local `chat.db`; entries are injected using one of three modes (pinned+recent, local keywords, or embeddings with optional rerank). Keyword and embedding modes never fall back to recent entries when nothing matches; without pinned entries the block is empty. The model can search memories and propose new or edited entries, a proposal only takes effect after you confirm it, each entry can carry a short matching description, and near-duplicates can be merged by hand. Export to txt and import txt/JSON (duplicates are skipped). Automatic conversation summaries are not implemented yet. Injection rules, switches and caps: [docs/context.md](docs/context.md).
 
-- **Prompts (role cards):** Settings → Prompts. Named cards with exactly one active globally; the body is appended after the built-in rules. Up to 30 cards and 8000 characters each, stored in `data/prompts.json`. Self-hosted mode can bind a different card to each workspace, with priority “workspace card → global card”; unbound workspaces, legacy chats and missing cards fall back to the global card. Cloud mode can organize chats into workspaces but does not bind role cards.
+- **Prompts (role cards):** Settings → Prompts. Named cards with exactly one active globally; the body is appended after the built-in rules. Up to 30 cards and 8000 characters each, stored in `data/prompts.json`. Self-hosted mode can bind a different card to each workspace, with priority “workspace card → global card”; “Use default character”, unbound workspaces, legacy chats and missing cards fall back to the global card. Cloud mode can organize chats into workspaces but does not bind role cards.
 
 ### UI and configuration
 
 - **First-run wizard:** choose DeepSeek Cloud or a custom backend first; Cloud finishes as soon as the key is saved and jumps to data management. Custom goes through model → optional features (search, attachment parsing, voice, rerank and embeddings), and every later step can be skipped; rerank, embedding and read-aloud live in that flow. Saving takes effect immediately, and you can reopen it from Settings → General.
 - **Capability detection:** unconfigured search, ASR, and similar entries are hidden automatically.
-- **Usage statistics:** Settings → Usage. Totals for requests, input / cache-read / output tokens, cache hit rate and estimated cost over 7 / 30 / 90 days, broken down by model; unit prices are per million tokens and 0 means free. Chat requests only, stored in the local `chat.db`; self-hosted requests are recorded by the backend across all tool rounds, while cloud requests are reported by the client and queued for retry on failure.
+- **Usage statistics:** Settings → Usage. Totals for requests, input / cache-read / output tokens, cache hit rate and estimated cost over 7 / 30 / 90 days, broken down by model; unit prices are per million tokens and 0 means free. Cache hit rate = cache-read input ÷ total input, where total input = uncached input + cache-creation input + cache-read input; output tokens are excluded. Chat requests only, stored in the local `chat.db`; self-hosted requests are recorded by the backend across all tool rounds, while cloud requests are reported by the client and queued for retry on failure.
 - **Debug panel:** click the sidebar title five times within 1.5 s. Status shows configuration and vector coverage per service, plus the active prompt card and its length, the memory similarity threshold, the enabled search engine count and the read-aloud voice; Logs shows the last 800 backend lines including request timings; Probes make one real request to LLM / Embedding / Rerank / Search / memory retrieval / speech input / read-aloud and report result and latency.
 - **UI fixes:** dark-mode select menus, session menu positioning, cleanup statistics, and related issues.
 - **Streaming performance work:** the active chat subscribes separately so every token does not rerender the whole app; context estimates are throttled to roughly 250 ms; long messages and session lists use browser deferred rendering; incomplete code, math and diagrams are highlighted only after closing or stopping; attachment originals are cached by file ID, URLs still in use are retained, and the idle cache is bounded. This reduces long-chat jank but cannot guarantee smooth performance on every device.
